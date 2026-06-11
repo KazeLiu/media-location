@@ -1,0 +1,11 @@
+node_modules/
+dist/
+
+# Runtime local data
+data/app.config.json
+data/thumb-cache/
+
+# Logs and temporary files
+*.log
+.DS_Store
+Thumbs.db
