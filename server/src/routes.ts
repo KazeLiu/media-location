@@ -2,10 +2,9 @@ import express from 'express';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { BrowseResponse } from '../../shared/contracts';
-import { gcj02ToWgs84 } from '../../shared/gps';
 import { loadConfig, saveConfig } from './config';
 import { ensureWithinRoots, findRootForPath, getParentInsideRoot, listDirectoryEntries } from './fs';
-import { browseFolders, listChildFolders } from './folders';
+import { browseFolders, getFolderPickerShortcuts, listChildFolders } from './folders';
 import { getSameNameXmpPath, scanMediaDirectory } from './media';
 import { getCachedThumbnail } from './thumbnails';
 import { writeGpsToXmpFile } from './xmp';
@@ -29,6 +28,14 @@ export function createApiRouter(): express.Router {
     try {
       const requestedPath = typeof req.query.path === 'string' ? req.query.path : undefined;
       res.json(await browseFolders(requestedPath));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/folders/shortcuts', async (_req, res, next) => {
+    try {
+      res.json(await getFolderPickerShortcuts());
     } catch (error) {
       next(error);
     }
@@ -131,25 +138,24 @@ export function createApiRouter(): express.Router {
     try {
       const config = await loadConfig();
       const mediaPath = ensureWithinRoots(String(req.body.path || ''), config.libraryRoots);
-      const gcjLng = Number(req.body.longitude);
-      const gcjLat = Number(req.body.latitude);
+      const wgsLng = Number(req.body.longitude);
+      const wgsLat = Number(req.body.latitude);
 
-      if (!Number.isFinite(gcjLng) || !Number.isFinite(gcjLat)) {
-        throw new Error('Invalid map coordinate.');
+      if (!Number.isFinite(wgsLng) || !Number.isFinite(wgsLat)) {
+        throw new Error('Invalid WGS-84 coordinate.');
       }
 
-      const wgs84 = gcj02ToWgs84(gcjLng, gcjLat);
       const xmpPath = getSameNameXmpPath(mediaPath);
       const writtenPath = await writeGpsToXmpFile(xmpPath, {
-        latitude: wgs84.lat,
-        longitude: wgs84.lng,
+        latitude: wgsLat,
+        longitude: wgsLng,
       }, config.backupBeforeWrite);
 
       res.json({
         path: mediaPath,
         xmpPath: writtenPath,
-        latitude: wgs84.lat,
-        longitude: wgs84.lng,
+        latitude: wgsLat,
+        longitude: wgsLng,
       });
     } catch (error) {
       next(error);

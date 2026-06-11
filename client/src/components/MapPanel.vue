@@ -3,27 +3,37 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus';
 import { Search } from '@element-plus/icons-vue';
 import type { MediaItem } from '@shared/contracts';
-import { gcj02ToWgs84, wgs84ToGcj02 } from '@shared/gps';
+import {
+  formatGcj02Wgs84CoordinateText,
+  gcj02ToWgs84,
+  getCoordinateLabelTextForSystem,
+  getCoordinateValueTextForSystem,
+  type CoordinateSystem,
+  wgs84ToGcj02,
+} from '@shared/gps';
 import { getMediaThumbnailUrl } from '@/api';
 import { loadAmap, loadAmapPlugins } from '@/lib/amap';
+import { formatAmapSuggestions, normalizeAmapLngLat, type AmapSearchSuggestion } from '@/lib/amapSearch';
 
 const INITIAL_ZOOM = 11;
+const SEARCH_RESULT_ZOOM = 17;
 const DEFAULT_CENTER = [116.397428, 39.90923];
+type MapLayerMode = 'standard' | 'satellite';
 
-interface SearchSuggestion {
-  value: string;
-  name: string;
-  district?: string;
-  address?: string;
-  location?: { lng: number; lat: number } | string;
-}
+type SearchSuggestion = AmapSearchSuggestion;
 
-const props = defineProps<{
-  amapKey: string;
-  items: MediaItem[];
-  selectedId: string;
-  loading: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    amapKey: string;
+    amapSecurityCode?: string;
+    items: MediaItem[];
+    selectedId: string;
+    loading: boolean;
+  }>(),
+  {
+    amapSecurityCode: '',
+  },
+);
 
 const emit = defineEmits<{
   select: [item: MediaItem];
@@ -36,7 +46,11 @@ const mapEl = ref<HTMLDivElement | null>(null);
 let map: any = null;
 let autocomplete: any = null;
 let placeSearch: any = null;
+let standardLayer: any = null;
+let satelliteLayer: any = null;
+let roadNetLayer: any = null;
 let markers: any[] = [];
+let searchMarker: any = null;
 let restoreMapDragTimer: number | null = null;
 let markerDragState: {
   item: MediaItem;
@@ -55,6 +69,9 @@ const mapModel = reactive({
   searchKeyword: '',
   searching: false,
   mouseCoord: null as { lng: number; lat: number } | null,
+  coordinateSystem: 'gcj02' as CoordinateSystem,
+  layerMode: 'standard' as MapLayerMode,
+  satelliteRoadNet: false,
   expandedId: '',
   draggingMarkerId: '',
   suppressMarkerClickUntil: 0,
@@ -62,11 +79,10 @@ const mapModel = reactive({
 
 const mouseCoordText = computed(() => {
   if (!mapModel.mouseCoord) {
-    return '移动鼠标查看经纬度';
+    return null;
   }
 
-  const coordinate = gcj02ToWgs84(mapModel.mouseCoord.lng, mapModel.mouseCoord.lat);
-  return formatCoordinate(coordinate.lng, coordinate.lat);
+  return formatGcj02Wgs84CoordinateText(mapModel.mouseCoord.lng, mapModel.mouseCoord.lat);
 });
 
 async function ensureMap(): Promise<void> {
@@ -78,7 +94,7 @@ async function ensureMap(): Promise<void> {
   }
 
   try {
-    await loadAmap(props.amapKey);
+    await loadAmap(props.amapKey, props.amapSecurityCode);
     const AMap = window.AMap;
     await loadAmapPlugins(['AMap.ToolBar', 'AMap.Scale', 'AMap.AutoComplete', 'AMap.PlaceSearch']);
 
@@ -87,13 +103,14 @@ async function ensureMap(): Promise<void> {
       center: DEFAULT_CENTER,
       viewMode: '2D',
     });
+    applyMapLayers();
     const AutocompleteCtor = AMap.AutoComplete || AMap.Autocomplete;
     if (typeof AutocompleteCtor !== 'function' || typeof AMap.PlaceSearch !== 'function') {
       throw new Error('高德搜索插件加载失败');
     }
 
-    autocomplete = new AutocompleteCtor();
-    placeSearch = new AMap.PlaceSearch();
+    autocomplete = new AutocompleteCtor({ city: '全国', citylimit: false });
+    placeSearch = new AMap.PlaceSearch({ city: '全国', citylimit: false, autoFitView: false });
 
     map.addControl(new AMap.ToolBar({ position: { right: '18px', bottom: '96px' } }));
     map.addControl(new AMap.Scale());
@@ -111,6 +128,7 @@ async function ensureMap(): Promise<void> {
         renderMarkers();
       }
 
+      clearSearchMarker();
       void copyLngLat(event.lnglat.lng, event.lnglat.lat);
     });
 
@@ -144,15 +162,17 @@ function handleDrop(event: DragEvent): void {
     return;
   }
 
+  clearSearchMarker();
   const container = map.getContainer();
   const rect = container.getBoundingClientRect();
   const pixel = new window.AMap.Pixel(event.clientX - rect.left, event.clientY - rect.top);
   const lnglat = map.containerToLngLat(pixel);
+  const wgs84 = gcj02ToWgs84(lnglat.lng, lnglat.lat);
   emit('select', item);
   emit('place', {
     path: item.path,
-    longitude: lnglat.lng,
-    latitude: lnglat.lat,
+    longitude: wgs84.lng,
+    latitude: wgs84.lat,
   });
 }
 
@@ -171,31 +191,22 @@ function fetchSearchSuggestions(keyword: string, callback: (items: SearchSuggest
   }
 
   autocomplete.search(keyword.trim(), (status: string, result: any) => {
-    if (status !== 'complete' || !Array.isArray(result?.tips)) {
+    if (status !== 'complete') {
+      handleAmapSearchError(result);
       callback([]);
       return;
     }
 
-    callback(
-      result.tips
-        .filter((tip: any) => typeof tip?.name === 'string' && tip.name.trim())
-        .map((tip: any) => ({
-          value: formatSuggestionValue(tip),
-          name: tip.name,
-          district: typeof tip.district === 'string' ? tip.district : '',
-          address: typeof tip.address === 'string' ? tip.address : '',
-          location: tip.location,
-        })),
-    );
+    callback(formatAmapSuggestions(result));
   });
 }
 
 async function handleSuggestionSelect(suggestion: SearchSuggestion): Promise<void> {
   mapModel.searchKeyword = suggestion.value;
-  const location = normalizeLngLat(suggestion.location);
+  const location = normalizeAmapLngLat(suggestion.location);
 
   if (location) {
-    moveMapCenter(location.lng, location.lat);
+    moveToSearchResult(location.lng, location.lat, suggestion.name || suggestion.value);
     ElMessage.success('已定位到搜索结果');
     return;
   }
@@ -211,11 +222,15 @@ async function locateKeyword(keyword: string): Promise<void> {
   mapModel.searching = true;
   placeSearch.search(keyword.trim(), (status: string, result: any) => {
     mapModel.searching = false;
-    const location = normalizeLngLat(result?.poiList?.pois?.[0]?.location);
+    const location = normalizeAmapLngLat(result?.poiList?.pois?.[0]?.location);
 
     if (status === 'complete' && location) {
-      moveMapCenter(location.lng, location.lat);
+      moveToSearchResult(location.lng, location.lat, result?.poiList?.pois?.[0]?.name || keyword);
       ElMessage.success('已定位到搜索结果');
+      return;
+    }
+
+    if (status !== 'complete' && handleAmapSearchError(result)) {
       return;
     }
 
@@ -223,56 +238,138 @@ async function locateKeyword(keyword: string): Promise<void> {
   });
 }
 
-function formatSuggestionValue(tip: any): string {
-  const parts = [tip.name, tip.district, tip.address]
-    .filter((part) => typeof part === 'string' && part.trim())
-    .map((part) => part.trim());
-
-  return Array.from(new Set(parts)).join(' ');
-}
-
-function normalizeLngLat(location: unknown): { lng: number; lat: number } | null {
-  if (!location) {
-    return null;
+function handleAmapSearchError(result: unknown): boolean {
+  if (result !== 'INVALID_USER_SCODE') {
+    return false;
   }
 
-  if (typeof location === 'string') {
-    const [lng, lat] = location.split(',').map(Number);
-    return Number.isFinite(lng) && Number.isFinite(lat) ? { lng, lat } : null;
-  }
-
-  const candidate = location as { lng?: unknown; lat?: unknown };
-  const lng = Number(candidate.lng);
-  const lat = Number(candidate.lat);
-  return Number.isFinite(lng) && Number.isFinite(lat) ? { lng, lat } : null;
+  const message = 'POI 搜索需要填写高德安全密钥';
+  mapModel.hint = message;
+  emit('error', message);
+  return true;
 }
 
-function moveMapCenter(lng: number, lat: number): void {
-  map?.setCenter([lng, lat]);
+function moveToSearchResult(lng: number, lat: number, label: string): void {
+  map?.setZoomAndCenter?.(SEARCH_RESULT_ZOOM, [lng, lat]);
+  showSearchMarker(lng, lat, label);
 }
 
-async function copyMouseCoord(): Promise<void> {
-  if (!mapModel.mouseCoord) {
-    ElMessage.warning('请先把鼠标移动到地图上');
+function showSearchMarker(lng: number, lat: number, label: string): void {
+  if (!map || !window.AMap) {
     return;
   }
 
-  await copyLngLat(mapModel.mouseCoord.lng, mapModel.mouseCoord.lat);
+  clearSearchMarker();
+  const content = createSearchMarkerContent(label);
+  searchMarker = new window.AMap.Marker({
+    position: [lng, lat],
+    content,
+    anchor: 'bottom-center',
+    offset: new window.AMap.Pixel(0, 0),
+    cursor: 'default',
+    zIndex: 600,
+  });
+  map.add(searchMarker);
+}
+
+function createSearchMarkerContent(label: string): HTMLElement {
+  const container = document.createElement('button');
+  container.type = 'button';
+  container.className = 'map-search-marker';
+  container.title = label || '搜索结果';
+  container.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  container.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  const pin = document.createElement('span');
+  pin.className = 'search-marker-pin';
+  container.appendChild(pin);
+
+  const dot = document.createElement('span');
+  dot.className = 'search-marker-dot';
+  pin.appendChild(dot);
+
+  return container;
+}
+
+function clearSearchMarker(): void {
+  searchMarker?.remove?.();
+  searchMarker = null;
+}
+
+function switchMapLayer(mode: MapLayerMode): void {
+  if (mode === 'standard') {
+    mapModel.layerMode = 'standard';
+    mapModel.satelliteRoadNet = false;
+    applyMapLayers();
+    return;
+  }
+
+  mapModel.layerMode = 'satellite';
+  applyMapLayers();
+}
+
+function toggleSatelliteRoadNet(value: boolean): void {
+  mapModel.satelliteRoadNet = value;
+  applyMapLayers();
+}
+
+function applyMapLayers(): void {
+  if (!map || !window.AMap) {
+    return;
+  }
+
+  ensureMapLayers();
+  if (mapModel.layerMode === 'satellite') {
+    map.setLayers([satelliteLayer]);
+    setRoadNetVisible(mapModel.satelliteRoadNet);
+    return;
+  }
+
+  setRoadNetVisible(false);
+  map.setLayers([standardLayer]);
+}
+
+function ensureMapLayers(): void {
+  if (!window.AMap) {
+    return;
+  }
+
+  standardLayer ||= new window.AMap.TileLayer();
+  satelliteLayer ||= new window.AMap.TileLayer.Satellite();
+  roadNetLayer ||= new window.AMap.TileLayer.RoadNet();
+}
+
+function setRoadNetVisible(visible: boolean): void {
+  if (!roadNetLayer) {
+    return;
+  }
+
+  if (visible) {
+    roadNetLayer.setMap?.(map);
+    roadNetLayer.show?.();
+    return;
+  }
+
+  roadNetLayer.hide?.();
+  roadNetLayer.setMap?.(null);
 }
 
 async function copyLngLat(lng: number, lat: number): Promise<void> {
-  const coordinate = gcj02ToWgs84(lng, lat);
-  const text = formatCoordinate(coordinate.lng, coordinate.lat);
+  const coordinateText = formatGcj02Wgs84CoordinateText(lng, lat);
+  const text = getCoordinateValueTextForSystem(coordinateText, mapModel.coordinateSystem);
+  const labelText = getCoordinateLabelTextForSystem(coordinateText, mapModel.coordinateSystem);
   try {
     await navigator.clipboard.writeText(text);
-    ElMessage.success(`已复制 ${text}`);
+    ElMessage.success(`已复制 ${labelText}`);
   } catch {
-    ElMessage.error(`复制 ${text} 失败`);
+    ElMessage.error(`复制 ${labelText} 失败`);
   }
-}
-
-function formatCoordinate(lng: number, lat: number): string {
-  return `${lng.toFixed(6)},${lat.toFixed(6)}`;
 }
 
 function renderMarkers(): void {
@@ -331,6 +428,7 @@ function createMarkerContent(item: MediaItem, expanded: boolean, getMarker: () =
       return;
     }
 
+    clearSearchMarker();
     emit('select', item);
     mapModel.expandedId = mapModel.expandedId === item.id ? '' : item.id;
     renderMarkers();
@@ -374,6 +472,7 @@ function beginMarkerDrag(item: MediaItem, marker: any, element: HTMLElement, eve
 
   event.preventDefault();
   event.stopPropagation();
+  clearSearchMarker();
 
   const rect = element.getBoundingClientRect();
   markerDragState = {
@@ -466,10 +565,11 @@ function finishMarkerDragFromPointer(): void {
   }
 
   emit('select', state.item);
+  const wgs84 = gcj02ToWgs84(lnglat.lng, lnglat.lat);
   emit('place', {
     path: state.item.path,
-    longitude: lnglat.lng,
-    latitude: lnglat.lat,
+    longitude: wgs84.lng,
+    latitude: wgs84.lat,
   });
 }
 
@@ -504,7 +604,7 @@ function setMapDragEnabled(enabled: boolean): void {
 }
 
 watch(
-  () => [props.amapKey, props.items, props.selectedId, mapModel.expandedId],
+  () => [props.amapKey, props.amapSecurityCode, props.items, props.selectedId, mapModel.expandedId],
   async () => {
     await ensureMap();
     renderMarkers();
@@ -516,6 +616,7 @@ onMounted(ensureMap);
 
 onBeforeUnmount(() => {
   markers.forEach((marker) => marker.remove());
+  clearSearchMarker();
   cleanupMarkerDragListeners();
   if (restoreMapDragTimer !== null) {
     window.clearTimeout(restoreMapDragTimer);
@@ -540,7 +641,7 @@ onBeforeUnmount(() => {
         value-key="value"
         popper-class="map-search-popper"
         @select="handleSuggestionSelect"
-        @keyup.enter="searchAddress"
+        @keydown.enter="searchAddress"
       >
         <template #append>
           <el-button :icon="Search" :loading="mapModel.searching" @click="searchAddress" />
@@ -549,7 +650,44 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="map-coordinate">
-      <el-button plain @click="copyMouseCoord">WGS84:{{ mouseCoordText }}</el-button>
+      <el-button-group>
+        <el-button
+          :type="mapModel.coordinateSystem === 'gcj02' ? 'primary' : 'default'"
+          @click="mapModel.coordinateSystem = 'gcj02'"
+        >
+          {{ mouseCoordText?.gcj02Text ?? 'GCJ-02' }}
+        </el-button>
+        <el-button
+          :type="mapModel.coordinateSystem === 'wgs84' ? 'primary' : 'default'"
+          @click="mapModel.coordinateSystem = 'wgs84'"
+        >
+          {{ mouseCoordText?.wgs84Text ?? 'WGS-84' }}
+        </el-button>
+      </el-button-group>
+    </div>
+
+    <div class="map-layer-switch">
+      <el-checkbox
+        v-if="mapModel.layerMode === 'satellite'"
+        :model-value="mapModel.satelliteRoadNet"
+        @update:model-value="toggleSatelliteRoadNet(Boolean($event))"
+      >
+        路网
+      </el-checkbox>
+      <el-button-group>
+        <el-button
+          :type="mapModel.layerMode === 'satellite' ? 'primary' : 'default'"
+          @click="switchMapLayer('satellite')"
+        >
+          卫星图
+        </el-button>
+        <el-button
+          :type="mapModel.layerMode === 'standard' ? 'primary' : 'default'"
+          @click="switchMapLayer('standard')"
+        >
+          标准图
+        </el-button>
+      </el-button-group>
     </div>
 
     <el-tag class="map-hint" effect="light">{{ mapModel.hint }}</el-tag>

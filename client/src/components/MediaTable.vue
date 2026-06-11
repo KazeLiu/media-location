@@ -214,7 +214,7 @@ function parseCoordinate(source: string): { longitude: number; latitude: number 
                       <el-input
                         v-model="manualGpsModel.value"
                         size="small"
-                        placeholder="116.397128,39.916527"
+                        placeholder="输入 WGS-84 坐标"
                         autofocus
                         @keyup.enter="submitManualInput(item)"
                         @keyup.esc="cancelManualInput()"

@@ -17,6 +17,7 @@ const emit = defineEmits<{
 const settingsModel = reactive({
   port: props.config.port,
   amapKey: props.config.amapKey,
+  amapSecurityCode: props.config.amapSecurityCode,
   backupBeforeWrite: props.config.backupBeforeWrite,
 });
 
@@ -25,6 +26,7 @@ watch(
   (config) => {
     settingsModel.port = config.port;
     settingsModel.amapKey = config.amapKey;
+    settingsModel.amapSecurityCode = config.amapSecurityCode;
     settingsModel.backupBeforeWrite = config.backupBeforeWrite;
   },
   { deep: true, immediate: true },
@@ -35,6 +37,7 @@ function submit(): void {
     ...props.config,
     port: settingsModel.port,
     amapKey: settingsModel.amapKey.trim(),
+    amapSecurityCode: settingsModel.amapSecurityCode.trim(),
     backupBeforeWrite: settingsModel.backupBeforeWrite,
   });
 }
@@ -60,8 +63,13 @@ function submit(): void {
         <el-input v-model="settingsModel.amapKey" clearable />
       </el-form-item>
 
+      <el-form-item label="高德安全密钥">
+        <el-input v-model="settingsModel.amapSecurityCode" clearable show-password />
+      </el-form-item>
+
       <el-form-item label="写入前备份 XMP">
         <el-switch v-model="settingsModel.backupBeforeWrite" inline-prompt active-text="开" inactive-text="关" />
+        <div class="settings-help">开启后，写入经纬度前会保留原 XMP 的备份副本；关闭则直接更新 XMP。</div>
       </el-form-item>
     </el-form>
 

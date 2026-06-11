@@ -3,9 +3,39 @@ export interface GeoPoint {
   lat: number;
 }
 
+export type CoordinateSystem = 'gcj02' | 'wgs84';
+
+export interface Gcj02Wgs84CoordinateText {
+  gcj02Text: string;
+  gcj02ValueText: string;
+  wgs84Text: string;
+  wgs84ValueText: string;
+}
+
 const PI = Math.PI;
 const AXIS = 6378245.0;
 const OFFSET = 0.00669342162296594323;
+
+export function formatGcj02Wgs84CoordinateText(gcjLng: number, gcjLat: number): Gcj02Wgs84CoordinateText {
+  const gcj02ValueText = formatCoordinateValue(gcjLng, gcjLat);
+  const wgs84 = gcj02ToWgs84(gcjLng, gcjLat);
+  const wgs84ValueText = formatCoordinateValue(wgs84.lng, wgs84.lat);
+
+  return {
+    gcj02Text: `GCJ-02: ${gcj02ValueText}`,
+    gcj02ValueText,
+    wgs84Text: `WGS-84: ${wgs84ValueText}`,
+    wgs84ValueText,
+  };
+}
+
+export function getCoordinateValueTextForSystem(text: Gcj02Wgs84CoordinateText, system: CoordinateSystem): string {
+  return system === 'gcj02' ? text.gcj02ValueText : text.wgs84ValueText;
+}
+
+export function getCoordinateLabelTextForSystem(text: Gcj02Wgs84CoordinateText, system: CoordinateSystem): string {
+  return system === 'gcj02' ? text.gcj02Text : text.wgs84Text;
+}
 
 export function wgs84ToGcj02(lng: number, lat: number): GeoPoint {
   if (isOutsideMainlandChina(lng, lat)) {
@@ -60,6 +90,10 @@ export function gcj02ToWgs84(lng: number, lat: number): GeoPoint {
 
 function isOutsideMainlandChina(lng: number, lat: number): boolean {
   return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271;
+}
+
+function formatCoordinateValue(lng: number, lat: number): string {
+  return `${lng.toFixed(6)},${lat.toFixed(6)}`;
 }
 
 function transformDelta(x: number, y: number, lng: number, lat: number): GeoPoint {

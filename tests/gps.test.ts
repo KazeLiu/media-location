@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gcj02ToWgs84, wgs84ToGcj02 } from '@shared/gps';
+import { formatGcj02Wgs84CoordinateText, gcj02ToWgs84, wgs84ToGcj02 } from '@shared/gps';
 
 describe('gps coordinate conversion', () => {
   it('converts WGS84 to GCJ-02 inside mainland China', () => {
@@ -24,5 +24,14 @@ describe('gps coordinate conversion', () => {
 
     expect(wgs.lng).toBeCloseTo(116.397128, 5);
     expect(wgs.lat).toBeCloseTo(39.916527, 5);
+  });
+
+  it('formats GCJ-02 and WGS-84 coordinates together for map display and copy', () => {
+    const text = formatGcj02Wgs84CoordinateText(116.403372, 39.917931);
+
+    expect(text.gcj02Text).toBe('GCJ-02: 116.403372,39.917931');
+    expect(text.gcj02ValueText).toBe('116.403372,39.917931');
+    expect(text.wgs84Text).toMatch(/^WGS-84: 116\.397/);
+    expect(text.wgs84ValueText).toMatch(/^116\.397/);
   });
 });

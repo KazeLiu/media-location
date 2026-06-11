@@ -3,6 +3,7 @@ export interface AppConfig {
   appVersion: string;
   port: number;
   amapKey: string;
+  amapSecurityCode: string;
   libraryRoots: string[];
   backupBeforeWrite: boolean;
 }
@@ -48,4 +49,13 @@ export interface FolderPickerResponse {
   currentPath: string;
   parentPath: string | null;
   entries: FolderPickerEntry[];
+}
+
+export interface FolderPickerShortcut {
+  entry: FolderPickerEntry;
+  ancestorPaths: string[];
+}
+
+export interface FolderPickerShortcuts {
+  desktop: FolderPickerShortcut | null;
 }

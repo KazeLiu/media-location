@@ -4,10 +4,15 @@ const pluginLoaders = new Map<string, Promise<void>>();
 declare global {
   interface Window {
     AMap?: any;
+    _AMapSecurityConfig?: {
+      securityJsCode?: string;
+    };
   }
 }
 
-export function loadAmap(key: string): Promise<void> {
+export function loadAmap(key: string, securityCode = ''): Promise<void> {
+  applyAmapSecurityCode(securityCode);
+
   if (window.AMap) {
     return Promise.resolve();
   }
@@ -27,6 +32,18 @@ export function loadAmap(key: string): Promise<void> {
   });
 
   return amapLoader;
+}
+
+function applyAmapSecurityCode(securityCode: string): void {
+  const normalized = securityCode.trim();
+  if (!normalized) {
+    return;
+  }
+
+  window._AMapSecurityConfig = {
+    ...window._AMapSecurityConfig,
+    securityJsCode: normalized,
+  };
 }
 
 export async function loadAmapPlugins(plugins: string[]): Promise<void> {

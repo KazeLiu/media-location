@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Loading, Setting } from '@element-plus/icons-vue';
+import { Setting } from '@element-plus/icons-vue';
 import type { AppConfig, BrowseResponse, MediaItem } from '@shared/contracts';
 import { browseDirectory, getConfig, saveConfig, setMediaGps } from './api';
 import DirectoryBrowser from './components/DirectoryBrowser.vue';
@@ -19,8 +19,9 @@ const settingsModel = reactive({
     appVersion: '0.1.0',
     port: 6755,
     amapKey: '',
+    amapSecurityCode: '',
     libraryRoots: [] as string[],
-    backupBeforeWrite: true,
+    backupBeforeWrite: false,
   },
 });
 
@@ -58,14 +59,6 @@ const layoutModel = reactive({
 const roots = computed(() => settingsModel.config.libraryRoots);
 const visibleMedia = computed(() => mergeMediaItems(pinModel.items, browserModel.media));
 
-const statusText = computed(() => {
-  if (browserModel.busy || settingsModel.busy) {
-    return '处理中';
-  }
-
-  return settingsModel.message || browserModel.error || selectionModel.message || '就绪';
-});
-
 async function loadInitial(): Promise<void> {
   settingsModel.busy = true;
   try {
@@ -98,6 +91,7 @@ function applyConfig(config: AppConfig): void {
   settingsModel.config.appVersion = config.appVersion;
   settingsModel.config.port = config.port;
   settingsModel.config.amapKey = config.amapKey;
+  settingsModel.config.amapSecurityCode = config.amapSecurityCode;
   settingsModel.config.libraryRoots = config.libraryRoots;
   settingsModel.config.backupBeforeWrite = config.backupBeforeWrite;
 }
@@ -329,9 +323,9 @@ async function placeMedia(payload: { path: string; longitude: number; latitude: 
   try {
     const saved = await setMediaGps(payload);
     applyGpsUpdate(saved);
-    const coordinateText = formatCoordinateText(saved.longitude, saved.latitude);
-    selectionModel.message = `经纬度修改为 ${coordinateText}`;
-    ElMessage.success(`经纬度修改为 ${coordinateText}`);
+    const message = `经纬度修改为 WGS-84: ${formatCoordinateText(saved.longitude, saved.latitude)}`;
+    selectionModel.message = message;
+    ElMessage.success(message);
     await refresh();
   } catch (error) {
     const message = error instanceof Error ? error.message : '写入失败';
@@ -380,6 +374,7 @@ onMounted(loadInitial);
     <MapPanel
       class="map-layer"
       :amap-key="settingsModel.config.amapKey"
+      :amap-security-code="settingsModel.config.amapSecurityCode"
       :items="visibleMedia"
       :selected-id="selectionModel.selectedId"
       :loading="browserModel.busy"
@@ -400,11 +395,6 @@ onMounted(loadInitial);
       :icon="Setting"
       @click="layoutModel.settingsOpen = true"
     />
-
-    <el-tag class="status-chip" effect="light">
-      <el-icon v-if="browserModel.busy || settingsModel.busy" class="spin"><Loading /></el-icon>
-      {{ statusText }}
-    </el-tag>
 
     <SettingsPanel
       v-if="layoutModel.settingsOpen"

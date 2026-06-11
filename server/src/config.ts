@@ -7,8 +7,9 @@ const DEFAULT_CONFIG: AppConfig = {
   appVersion: '0.1.0',
   port: 6755,
   amapKey: '',
+  amapSecurityCode: '',
   libraryRoots: [],
-  backupBeforeWrite: true,
+  backupBeforeWrite: false,
 };
 
 export function getConfigPath(): string {
@@ -52,7 +53,8 @@ function normalizeConfig(input: Partial<AppConfig>): AppConfig {
     appName: DEFAULT_CONFIG.appName,
     appVersion: DEFAULT_CONFIG.appVersion,
     port: Number.isFinite(port) && port > 0 ? port : DEFAULT_CONFIG.port,
-    amapKey: String(input.amapKey || ''),
+    amapKey: String(input.amapKey || '').trim(),
+    amapSecurityCode: String(input.amapSecurityCode || '').trim(),
     libraryRoots,
     backupBeforeWrite: Boolean(input.backupBeforeWrite ?? DEFAULT_CONFIG.backupBeforeWrite),
   };
