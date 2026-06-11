@@ -1,4 +1,4 @@
-import type { AppConfig, BrowseResponse, FolderPickerEntry, FolderPickerResponse } from '@shared/contracts';
+import type { AppConfig, BrowseResponse, FolderPickerEntry, FolderPickerResponse, FolderPickerShortcuts } from '@shared/contracts';
 
 const API_BASE = '/api';
 
@@ -42,6 +42,10 @@ export function browseLibraryDirectories(dir: string): Promise<FolderPickerEntry
 export function browseFolders(dir?: string): Promise<FolderPickerResponse> {
   const query = dir ? `?path=${encodeURIComponent(dir)}` : '';
   return requestJson<FolderPickerResponse>(`/folders${query}`);
+}
+
+export function getFolderPickerShortcuts(): Promise<FolderPickerShortcuts> {
+  return requestJson<FolderPickerShortcuts>('/folders/shortcuts');
 }
 
 export function getMediaThumbnailUrl(path: string): string {

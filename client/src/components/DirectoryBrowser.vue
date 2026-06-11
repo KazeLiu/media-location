@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { ElMessage } from 'element-plus';
-import { ArrowDown, ArrowRight, FolderAdd, Refresh } from '@element-plus/icons-vue';
-import { PinOff } from 'lucide-vue-next';
+import { ArrowDown, ArrowRight, Delete, FolderAdd, Refresh } from '@element-plus/icons-vue';
 import type { FolderPickerEntry } from '@shared/contracts';
 import { browseLibraryDirectories } from '@/api';
 
@@ -114,7 +113,7 @@ function handleRemoveRoot(path: string, event: MouseEvent): void {
               <el-tooltip v-if="data.root" content="从目录列表移除这个固定目录" placement="top">
                 <el-button
                   class="directory-remove-button"
-                  :icon="PinOff"
+                  :icon="Delete"
                   link
                   type="danger"
                   aria-label="移除固定目录"
