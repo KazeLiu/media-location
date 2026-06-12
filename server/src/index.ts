@@ -1,9 +1,9 @@
 import cors from 'cors';
 import express from 'express';
-import path from 'node:path';
 import { loadConfig } from './config';
 import { openBrowser } from './openBrowser';
 import { createApiRouter, createStaticRouter } from './routes';
+import { resolveClientDist, shouldServeStaticClient } from './runtime';
 
 let activeServer: ReturnType<express.Express['listen']> | null = null;
 
@@ -15,9 +15,8 @@ async function main(): Promise<void> {
   app.use(express.json({ limit: '2mb' }));
   app.use('/api', createApiRouter());
 
-  const clientDist = path.resolve(process.cwd(), 'dist/client');
-  if (process.env.NODE_ENV === 'production') {
-    app.use(createStaticRouter(clientDist));
+  if (shouldServeStaticClient()) {
+    app.use(createStaticRouter(resolveClientDist()));
   }
 
   activeServer = app.listen(config.port, '0.0.0.0', async () => {

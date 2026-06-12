@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import exifr from 'exifr';
-import sharp from 'sharp';
 
 export interface ThumbnailResult {
   path: string;
@@ -44,6 +43,8 @@ async function generateCompressedPreview(mediaPath: string, cachePath: string): 
   }
 
   try {
+    const sharp = await loadSharp();
+
     await fs.mkdir(CACHE_DIR, { recursive: true });
     await sharp(mediaPath)
       .rotate()
@@ -63,6 +64,11 @@ async function generateCompressedPreview(mediaPath: string, cachePath: string): 
   } catch {
     return null;
   }
+}
+
+async function loadSharp(): Promise<typeof import('sharp').default> {
+  const module = await import('sharp');
+  return module.default;
 }
 
 function isCompressibleImage(mediaPath: string): boolean {
