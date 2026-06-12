@@ -34,6 +34,7 @@ const browserModel = reactive({
   rootDir: null as string | null,
   entries: [] as BrowseResponse['entries'],
   media: [] as MediaItem[],
+  directoryTreeRefreshVersion: 0,
 });
 
 // Selection block: owns the item that receives map drop/click writes.
@@ -137,10 +138,14 @@ async function openDirectory(dir: string): Promise<void> {
 }
 
 async function refresh(): Promise<void> {
-  if (browserModel.currentDir) {
-    await openDirectory(browserModel.currentDir);
-  } else {
-    await openPreferredRoot();
+  try {
+    if (browserModel.currentDir) {
+      await openDirectory(browserModel.currentDir);
+    } else {
+      await openPreferredRoot();
+    }
+  } finally {
+    browserModel.directoryTreeRefreshVersion += 1;
   }
 }
 
@@ -413,6 +418,7 @@ onMounted(loadInitial);
           :roots="roots"
           :loading="browserModel.busy"
           :collapsed="layoutModel.directoryCollapsed"
+          :refresh-version="browserModel.directoryTreeRefreshVersion"
           @add-root="layoutModel.folderPickerOpen = true"
           @open-dir="openDirectory"
           @remove-root="removeLibraryRoot"

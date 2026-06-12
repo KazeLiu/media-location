@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, reactive, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { ArrowDown, ArrowRight, Delete, FolderAdd, Refresh } from '@element-plus/icons-vue';
 import type { FolderPickerEntry } from '@shared/contracts';
 import { browseLibraryDirectories } from '@/api';
+import {
+  addExpandedDirectoryKey,
+  nextDirectoryTreeRenderKey,
+  removeCollapsedDirectoryKeys,
+} from '@/lib/directoryTree';
 
 type DirectoryTreeNode = {
   label: string;
@@ -17,6 +22,7 @@ const props = defineProps<{
   roots: string[];
   loading: boolean;
   collapsed: boolean;
+  refreshVersion: number;
 }>();
 
 const emit = defineEmits<{
@@ -32,6 +38,12 @@ const treeProps = {
   isLeaf: (data: DirectoryTreeNode) => !data.hasChildren,
 };
 
+// Tree block: owns Element Plus lazy tree cache resets and expanded node recovery.
+const treeModel = reactive({
+  renderKey: 0,
+  expandedKeys: [] as string[],
+});
+
 const rootNodes = computed<DirectoryTreeNode[]>(() =>
   props.roots.map((root) => ({
     label: root,
@@ -39,6 +51,13 @@ const rootNodes = computed<DirectoryTreeNode[]>(() =>
     root: true,
     hasChildren: true,
   })),
+);
+
+watch(
+  () => props.refreshVersion,
+  () => {
+    treeModel.renderKey = nextDirectoryTreeRenderKey(treeModel.renderKey);
+  },
 );
 
 async function loadNode(node: any, resolve: (data: DirectoryTreeNode[]) => void): Promise<void> {
@@ -69,6 +88,14 @@ function handleNodeClick(node: DirectoryTreeNode): void {
   emit('openDir', node.path);
 }
 
+function handleNodeExpand(node: DirectoryTreeNode): void {
+  treeModel.expandedKeys = addExpandedDirectoryKey(treeModel.expandedKeys, node.path);
+}
+
+function handleNodeCollapse(node: DirectoryTreeNode): void {
+  treeModel.expandedKeys = removeCollapsedDirectoryKeys(treeModel.expandedKeys, node.path);
+}
+
 function handleRemoveRoot(path: string, event: MouseEvent): void {
   event.stopPropagation();
   emit('removeRoot', path);
@@ -96,16 +123,20 @@ function handleRemoveRoot(path: string, event: MouseEvent): void {
       <el-scrollbar class="folder-scrollbar" v-loading="loading">
         <el-empty v-if="!roots.length" :image-size="52" description="还没有目录" />
         <el-tree
+          :key="treeModel.renderKey"
           v-else
           :data="rootNodes"
           :load="loadNode"
           :props="treeProps"
           lazy
           node-key="path"
+          :default-expanded-keys="treeModel.expandedKeys"
           highlight-current
           :current-node-key="currentDir"
           class="directory-tree"
           @node-click="handleNodeClick"
+          @node-expand="handleNodeExpand"
+          @node-collapse="handleNodeCollapse"
         >
           <template #default="{ data }">
             <div class="directory-tree-node">
