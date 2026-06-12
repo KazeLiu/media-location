@@ -1,58 +1,139 @@
 import express from 'express';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { BrowseResponse } from '../../shared/contracts';
+import type { BrowseResponse, ClientLogPayload } from '../../shared/contracts';
 import { loadConfig, saveConfig } from './config';
 import { ensureWithinRoots, findRootForPath, getParentInsideRoot, listDirectoryEntries } from './fs';
 import { browseFolders, getFolderPickerShortcuts, listChildFolders } from './folders';
-import { getSameNameXmpPath, scanMediaDirectory } from './media';
-import { getCachedThumbnail } from './thumbnails';
+import { isMediaFile, resolveXmpPathForWrite, scanMediaDirectoryPage } from './media';
+import { readRecentLogs, writeOperationLog } from './operationLog';
+import { getCachedThumbnail, ThumbnailGenerationError } from './thumbnails';
 import { writeGpsToXmpFile } from './xmp';
 
-export function createApiRouter(): express.Router {
+export interface ApiRouterOptions {
+  shutdown?: () => void | Promise<void>;
+}
+
+export function createApiRouter(options: ApiRouterOptions = {}): express.Router {
   const router = express.Router();
 
   router.get('/health', (_req, res) => {
     res.json({ ok: true });
   });
 
-  router.get('/config', async (_req, res, next) => {
+  router.post('/shutdown', async (_req, res, next) => {
+    const startedAt = Date.now();
     try {
-      res.json(await loadConfig());
+      await writeOperationLog({
+        level: 'info',
+        action: 'shutdown:request',
+        target: 'server',
+        status: 'ok',
+        durationMs: Date.now() - startedAt,
+      });
+      res.json({ ok: true });
+      setTimeout(() => {
+        Promise.resolve(options.shutdown?.()).catch((error) => {
+          void writeOperationLog({
+            level: 'error',
+            action: 'shutdown',
+            target: 'server',
+            status: 'error',
+            message: error instanceof Error ? error.message : 'Unknown shutdown error',
+            details: error instanceof Error ? { stack: error.stack } : undefined,
+          }).catch(() => undefined);
+        });
+      }, 10);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/logs', async (_req, res, next) => {
+    const startedAt = Date.now();
+    try {
+      const logs = await readRecentLogs();
+      await logSuccess('read:logs', logs.path, startedAt);
+      res.json(logs);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/client-log', async (req, res, next) => {
+    const startedAt = Date.now();
+    try {
+      const payload = normalizeClientLogPayload(req.body);
+      await writeOperationLog({
+        level: payload.level,
+        action: payload.action,
+        target: 'browser',
+        status: payload.level === 'error' ? 'error' : 'ok',
+        message: payload.message,
+        durationMs: Date.now() - startedAt,
+        details: payload.details,
+      });
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/config', async (_req, res, next) => {
+    const startedAt = Date.now();
+    try {
+      const config = await loadConfig();
+      await logSuccess('read:config', 'app.config.json', startedAt);
+      res.json(config);
     } catch (error) {
       next(error);
     }
   });
 
   router.get('/folders', async (req, res, next) => {
+    const startedAt = Date.now();
     try {
       const requestedPath = typeof req.query.path === 'string' ? req.query.path : undefined;
-      res.json(await browseFolders(requestedPath));
+      const response = await browseFolders(requestedPath);
+      await logSuccess('read:folders', requestedPath ?? 'default', startedAt);
+      res.json(response);
     } catch (error) {
       next(error);
     }
   });
 
   router.get('/folders/shortcuts', async (_req, res, next) => {
+    const startedAt = Date.now();
     try {
-      res.json(await getFolderPickerShortcuts());
+      const shortcuts = await getFolderPickerShortcuts();
+      await logSuccess('read:folder-shortcuts', 'system', startedAt);
+      res.json(shortcuts);
     } catch (error) {
       next(error);
     }
   });
 
   router.post('/config', async (req, res, next) => {
+    const startedAt = Date.now();
     try {
-      res.json(await saveConfig(req.body));
+      const saved = await saveConfig(req.body);
+      await logSuccess('write:config', 'app.config.json', startedAt, {
+        libraryRootCount: saved.libraryRoots.length,
+      });
+      res.json(saved);
     } catch (error) {
       next(error);
     }
   });
 
   router.get('/library/browse', async (req, res, next) => {
+    const startedAt = Date.now();
     try {
       const config = await loadConfig();
       const requestedDir = typeof req.query.dir === 'string' ? req.query.dir : config.libraryRoots[0];
+      const mediaFilter = typeof req.query.filter === 'string' ? req.query.filter : '';
+      const mediaOffset = toNonNegativeInteger(req.query.offset, 0);
+      const mediaLimit = toPositiveInteger(req.query.limit, 120);
 
       if (!requestedDir) {
         res.json({
@@ -61,6 +142,10 @@ export function createApiRouter(): express.Router {
           rootDir: null,
           entries: [],
           media: [],
+          mediaTotal: 0,
+          mediaOffset,
+          mediaLimit,
+          mediaFilter,
         } satisfies BrowseResponse);
         return;
       }
@@ -77,12 +162,31 @@ export function createApiRouter(): express.Router {
         throw new Error(`Path is not a directory: ${currentDir}`);
       }
 
+      const mediaPage = await scanMediaDirectoryPage(currentDir, {
+        filter: mediaFilter,
+        offset: mediaOffset,
+        limit: mediaLimit,
+      });
+      const entries = await listDirectoryEntries(currentDir);
+
+      await logSuccess('read:library', currentDir, startedAt, {
+        filter: mediaFilter,
+        offset: mediaPage.offset,
+        limit: mediaPage.limit,
+        total: mediaPage.total,
+        returned: mediaPage.items.length,
+      });
+
       res.json({
         currentDir,
         parentDir: getParentInsideRoot(currentDir, rootDir),
         rootDir,
-        entries: await listDirectoryEntries(currentDir),
-        media: await scanMediaDirectory(currentDir),
+        entries,
+        media: mediaPage.items,
+        mediaTotal: mediaPage.total,
+        mediaOffset: mediaPage.offset,
+        mediaLimit: mediaPage.limit,
+        mediaFilter: mediaPage.filter,
       } satisfies BrowseResponse);
     } catch (error) {
       next(error);
@@ -90,6 +194,7 @@ export function createApiRouter(): express.Router {
   });
 
   router.get('/library/directories', async (req, res, next) => {
+    const startedAt = Date.now();
     try {
       const config = await loadConfig();
       const requestedDir = typeof req.query.dir === 'string' ? req.query.dir : config.libraryRoots[0];
@@ -105,13 +210,18 @@ export function createApiRouter(): express.Router {
         throw new Error(`Path is not a directory: ${currentDir}`);
       }
 
-      res.json(await listChildFolders(currentDir));
+      const folders = await listChildFolders(currentDir);
+      await logSuccess('read:child-directories', currentDir, startedAt, {
+        count: folders.length,
+      });
+      res.json(folders);
     } catch (error) {
       next(error);
     }
   });
 
   router.get('/media/thumbnail', async (req, res, next) => {
+    const startedAt = Date.now();
     try {
       const config = await loadConfig();
       const mediaPath = ensureWithinRoots(String(req.query.path || ''), config.libraryRoots);
@@ -121,12 +231,44 @@ export function createApiRouter(): express.Router {
         throw new Error(`Path is not a file: ${mediaPath}`);
       }
 
-      const thumbnail = await getCachedThumbnail(mediaPath);
+      let thumbnail;
+      try {
+        thumbnail = await getCachedThumbnail(mediaPath);
+      } catch (error) {
+        if (error instanceof ThumbnailGenerationError) {
+          await writeOperationLog({
+            level: 'error',
+            action: 'thumbnail:ffmpeg',
+            target: mediaPath,
+            status: 'error',
+            message: error.message,
+            durationMs: Date.now() - startedAt,
+            details: {
+              ...error.details,
+              cause: normalizeErrorForLog(error.cause),
+            },
+          });
+          res.status(500).json({ error: 'Thumbnail generation failed. Check logs for ffmpeg details.' });
+          return;
+        }
+
+        throw error;
+      }
+
       if (!thumbnail) {
+        await writeOperationLog({
+          level: 'warn',
+          action: 'read:thumbnail',
+          target: mediaPath,
+          status: 'miss',
+          message: 'No embedded thumbnail found.',
+          durationMs: Date.now() - startedAt,
+        });
         res.status(404).json({ error: 'No embedded thumbnail found.' });
         return;
       }
 
+      await logSuccess('read:thumbnail', mediaPath, startedAt);
       res.type(thumbnail.contentType);
       res.sendFile(thumbnail.path);
     } catch (error) {
@@ -134,7 +276,29 @@ export function createApiRouter(): express.Router {
     }
   });
 
+  router.get('/media/file', async (req, res, next) => {
+    const startedAt = Date.now();
+    try {
+      const config = await loadConfig();
+      const mediaPath = ensureWithinRoots(String(req.query.path || ''), config.libraryRoots);
+      const stat = await fs.stat(mediaPath);
+
+      if (!stat.isFile()) {
+        throw new Error(`Path is not a file: ${mediaPath}`);
+      }
+
+      if (!isMediaFile(mediaPath)) {
+        throw new Error(`Path is not a media file: ${mediaPath}`);
+      }
+
+      res.sendFile(mediaPath);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post('/media/set-gps', async (req, res, next) => {
+    const startedAt = Date.now();
     try {
       const config = await loadConfig();
       const mediaPath = ensureWithinRoots(String(req.body.path || ''), config.libraryRoots);
@@ -145,12 +309,17 @@ export function createApiRouter(): express.Router {
         throw new Error('Invalid WGS-84 coordinate.');
       }
 
-      const xmpPath = getSameNameXmpPath(mediaPath);
+      const xmpPath = await resolveXmpPathForWrite(mediaPath);
       const writtenPath = await writeGpsToXmpFile(xmpPath, {
         latitude: wgsLat,
         longitude: wgsLng,
       }, config.backupBeforeWrite);
 
+      await logSuccess('write:gps', mediaPath, startedAt, {
+        xmpPath: writtenPath,
+        latitude: wgsLat,
+        longitude: wgsLng,
+      });
       res.json({
         path: mediaPath,
         xmpPath: writtenPath,
@@ -162,12 +331,84 @@ export function createApiRouter(): express.Router {
     }
   });
 
-  router.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  router.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const message = error instanceof Error ? error.message : 'Unknown server error';
+    void writeOperationLog({
+      level: 'error',
+      action: `error:${req.method.toLowerCase()} ${req.path}`,
+      target: req.originalUrl,
+      status: 'error',
+      message,
+      details: error instanceof Error ? { stack: error.stack } : undefined,
+    }).catch(() => undefined);
     res.status(400).json({ error: message });
   });
 
   return router;
+}
+
+async function logSuccess(action: string, target: string, startedAt: number, details?: unknown): Promise<void> {
+  await writeOperationLog({
+    level: 'info',
+    action,
+    target,
+    status: 'ok',
+    durationMs: Date.now() - startedAt,
+    details,
+  });
+}
+
+function normalizeClientLogPayload(input: unknown): ClientLogPayload {
+  const source: Record<string, unknown> = isRecord(input) ? input : {};
+  const rawLevel = String(source.level ?? 'info');
+  const level: ClientLogPayload['level'] =
+    rawLevel === 'warn' || rawLevel === 'error' || rawLevel === 'info' ? rawLevel : 'info';
+  const action = String(source.action || 'client:event').slice(0, 120);
+  const message = typeof source.message === 'string' ? source.message.slice(0, 2000) : undefined;
+
+  return {
+    level,
+    action,
+    message,
+    details: source.details,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeErrorForLog(error: unknown): unknown {
+  if (!(error instanceof Error)) {
+    return error;
+  }
+
+  const nodeError = error as NodeJS.ErrnoException;
+  return {
+    name: error.name,
+    message: error.message,
+    code: nodeError.code,
+    path: nodeError.path,
+    stack: error.stack,
+  };
+}
+
+function toNonNegativeInteger(value: unknown, fallback: number): number {
+  const numberValue = Number(value ?? fallback);
+  if (!Number.isFinite(numberValue)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.floor(numberValue));
+}
+
+function toPositiveInteger(value: unknown, fallback: number): number {
+  const numberValue = Number(value ?? fallback);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(numberValue);
 }
 
 export function createStaticRouter(clientDist: string): express.Router {

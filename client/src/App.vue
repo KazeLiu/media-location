@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Setting } from '@element-plus/icons-vue';
 import type { AppConfig, BrowseResponse, MediaItem } from '@shared/contracts';
@@ -9,6 +9,14 @@ import FolderPickerDialog from './components/FolderPickerDialog.vue';
 import MapPanel from './components/MapPanel.vue';
 import MediaTable from './components/MediaTable.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
+
+const MEDIA_PAGE_LIMIT = 120;
+
+interface OpenDirectoryOptions {
+  append?: boolean;
+  offset?: number;
+  filter?: string;
+}
 
 // Settings block: keeps backend-owned app config and save status together.
 const settingsModel = reactive({
@@ -22,24 +30,30 @@ const settingsModel = reactive({
     amapSecurityCode: '',
     libraryRoots: [] as string[],
     backupBeforeWrite: false,
+    loadVideoContent: false,
   },
 });
 
 // Browser block: tracks the current root, child folders, and scanned media in one place.
 const browserModel = reactive({
   busy: false,
+  loadingMore: false,
   error: '',
   currentDir: '',
   parentDir: null as string | null,
   rootDir: null as string | null,
   entries: [] as BrowseResponse['entries'],
   media: [] as MediaItem[],
+  mediaTotal: 0,
+  mediaOffset: 0,
+  mediaLimit: MEDIA_PAGE_LIMIT,
+  mediaFilter: '',
   directoryTreeRefreshVersion: 0,
 });
 
 // Selection block: owns the item that receives map drop/click writes.
 const selectionModel = reactive({
-  selectedId: '',
+  selectedPath: '',
   saving: '',
   message: '',
 });
@@ -59,6 +73,8 @@ const layoutModel = reactive({
 
 const roots = computed(() => settingsModel.config.libraryRoots);
 const visibleMedia = computed(() => mergeMediaItems(pinModel.items, browserModel.media));
+const mediaHasMore = computed(() => browserModel.media.length < browserModel.mediaTotal);
+let mediaFilterTimer: number | null = null;
 
 async function loadInitial(): Promise<void> {
   settingsModel.busy = true;
@@ -95,6 +111,7 @@ function applyConfig(config: AppConfig): void {
   settingsModel.config.amapSecurityCode = config.amapSecurityCode;
   settingsModel.config.libraryRoots = config.libraryRoots;
   settingsModel.config.backupBeforeWrite = config.backupBeforeWrite;
+  settingsModel.config.loadVideoContent = config.loadVideoContent;
 }
 
 async function openPreferredRoot(): Promise<void> {
@@ -113,19 +130,39 @@ function clearBrowser(): void {
   browserModel.parentDir = null;
   browserModel.entries = [];
   browserModel.media = [];
+  browserModel.mediaTotal = 0;
+  browserModel.mediaOffset = 0;
   syncSelectionWithVisibleMedia();
 }
 
-async function openDirectory(dir: string): Promise<void> {
-  browserModel.busy = true;
+async function openDirectory(dir: string, options: OpenDirectoryOptions = {}): Promise<void> {
+  clearMediaFilterTimer();
+  const append = Boolean(options.append);
+  const filter = options.filter ?? browserModel.mediaFilter;
+  const offset = options.offset ?? (append ? browserModel.media.length : 0);
+
+  if (append) {
+    browserModel.loadingMore = true;
+  } else {
+    browserModel.busy = true;
+  }
+
   browserModel.error = '';
   try {
-    const response = await browseDirectory(dir);
+    const response = await browseDirectory(dir, {
+      filter,
+      offset,
+      limit: browserModel.mediaLimit,
+    });
     browserModel.currentDir = response.currentDir;
     browserModel.parentDir = response.parentDir;
     browserModel.rootDir = response.rootDir;
     browserModel.entries = response.entries;
-    browserModel.media = response.media;
+    browserModel.media = append ? mergeMediaItems(browserModel.media, response.media) : response.media;
+    browserModel.mediaTotal = response.mediaTotal ?? response.media.length;
+    browserModel.mediaOffset = response.mediaOffset ?? offset;
+    browserModel.mediaLimit = response.mediaLimit ?? browserModel.mediaLimit;
+    browserModel.mediaFilter = response.mediaFilter ?? filter;
     refreshPinnedMedia(response.media);
     syncSelectionWithVisibleMedia();
   } catch (error) {
@@ -133,7 +170,11 @@ async function openDirectory(dir: string): Promise<void> {
     browserModel.error = message;
     ElMessage.error(message);
   } finally {
-    browserModel.busy = false;
+    if (append) {
+      browserModel.loadingMore = false;
+    } else {
+      browserModel.busy = false;
+    }
   }
 }
 
@@ -147,6 +188,42 @@ async function refresh(): Promise<void> {
   } finally {
     browserModel.directoryTreeRefreshVersion += 1;
   }
+}
+
+function handleMediaFilterChange(filter: string): void {
+  browserModel.mediaFilter = filter;
+  if (!browserModel.currentDir) {
+    return;
+  }
+
+  clearMediaFilterTimer();
+  mediaFilterTimer = window.setTimeout(() => {
+    void openDirectory(browserModel.currentDir, {
+      filter,
+      offset: 0,
+    });
+  }, 300);
+}
+
+async function loadMoreMedia(): Promise<void> {
+  if (!browserModel.currentDir || browserModel.loadingMore || !mediaHasMore.value) {
+    return;
+  }
+
+  await openDirectory(browserModel.currentDir, {
+    append: true,
+    offset: browserModel.media.length,
+    filter: browserModel.mediaFilter,
+  });
+}
+
+function clearMediaFilterTimer(): void {
+  if (mediaFilterTimer === null) {
+    return;
+  }
+
+  window.clearTimeout(mediaFilterTimer);
+  mediaFilterTimer = null;
 }
 
 function mergeMediaItems(primary: MediaItem[], secondary: MediaItem[]): MediaItem[] {
@@ -193,18 +270,18 @@ function normalizeComparablePath(source: string): string {
   return source.replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase();
 }
 
-function syncSelectionWithVisibleMedia(preferredId?: string): void {
+function syncSelectionWithVisibleMedia(preferredPath?: string): void {
   const items = visibleMedia.value;
-  if (preferredId && items.some((item) => item.id === preferredId)) {
-    selectionModel.selectedId = preferredId;
+  if (preferredPath && items.some((item) => item.path === preferredPath)) {
+    selectionModel.selectedPath = preferredPath;
     return;
   }
 
-  if (selectionModel.selectedId && items.some((item) => item.id === selectionModel.selectedId)) {
+  if (selectionModel.selectedPath && items.some((item) => item.path === selectionModel.selectedPath)) {
     return;
   }
 
-  selectionModel.selectedId = items[0]?.id ?? '';
+  selectionModel.selectedPath = items[0]?.path ?? '';
 }
 
 function togglePinnedMedia(item: MediaItem): void {
@@ -217,7 +294,7 @@ function togglePinnedMedia(item: MediaItem): void {
     ElMessage.success('已固定照片');
   }
 
-  syncSelectionWithVisibleMedia(item.id);
+  syncSelectionWithVisibleMedia(item.path);
 }
 
 function pinCurrentDirectory(): void {
@@ -246,7 +323,7 @@ function pinCurrentDirectory(): void {
   }
 
   pinModel.items.push(...nextItems);
-  syncSelectionWithVisibleMedia(selectionModel.selectedId || nextItems[0]?.id);
+  syncSelectionWithVisibleMedia(selectionModel.selectedPath || nextItems[0]?.path);
   ElMessage.success(`已固定当前目录 ${nextItems.length} 个媒体`);
 }
 
@@ -331,7 +408,6 @@ async function placeMedia(payload: { path: string; longitude: number; latitude: 
     const message = `经纬度修改为 WGS-84: ${formatCoordinateText(saved.longitude, saved.latitude)}`;
     selectionModel.message = message;
     ElMessage.success(message);
-    await refresh();
   } catch (error) {
     const message = error instanceof Error ? error.message : '写入失败';
     selectionModel.message = message;
@@ -364,14 +440,15 @@ function applyGpsUpdate(updated: { path: string; xmpPath?: string; latitude: num
 
 function handleDragStart(item: MediaItem, event: DragEvent): void {
   event.dataTransfer?.setData('text/plain', item.path);
-  selectionModel.selectedId = item.id;
+  selectionModel.selectedPath = item.path;
 }
 
 function handleSelectItem(item: MediaItem): void {
-  selectionModel.selectedId = item.id;
+  selectionModel.selectedPath = item.path;
 }
 
 onMounted(loadInitial);
+onBeforeUnmount(clearMediaFilterTimer);
 </script>
 
 <template>
@@ -381,8 +458,7 @@ onMounted(loadInitial);
       :amap-key="settingsModel.config.amapKey"
       :amap-security-code="settingsModel.config.amapSecurityCode"
       :items="visibleMedia"
-      :selected-id="selectionModel.selectedId"
-      :loading="browserModel.busy"
+      :selected-path="selectionModel.selectedPath"
       @select="handleSelectItem"
       @place="placeMedia"
       @ready="handleMapReady"
@@ -412,7 +488,13 @@ onMounted(loadInitial);
     <FolderPickerDialog v-model="layoutModel.folderPickerOpen" @confirm="addLibraryRoot" />
 
     <main class="floating-workbench">
-      <section class="stack-column" :class="{ 'media-is-collapsed': layoutModel.mediaCollapsed }">
+      <section
+        class="stack-column"
+        :class="{
+          'directory-is-collapsed': layoutModel.directoryCollapsed,
+          'media-is-collapsed': layoutModel.mediaCollapsed,
+        }"
+      >
         <DirectoryBrowser
           :current-dir="browserModel.currentDir"
           :roots="roots"
@@ -430,14 +512,20 @@ onMounted(loadInitial);
           :current-dir="browserModel.currentDir"
           :items="browserModel.media"
           :pinned-items="pinModel.items"
-          :selected-id="selectionModel.selectedId"
+          :media-total="browserModel.mediaTotal"
+          :media-filter="browserModel.mediaFilter"
+          :has-more="mediaHasMore"
+          :selected-path="selectionModel.selectedPath"
           :loading="browserModel.busy"
+          :loading-more="browserModel.loadingMore"
           :collapsed="layoutModel.mediaCollapsed"
           @select="handleSelectItem"
           @drag-start="handleDragStart"
           @manual-place="placeMedia"
           @toggle-pin="togglePinnedMedia"
           @pin-current-dir="pinCurrentDirectory"
+          @filter-change="handleMediaFilterChange"
+          @load-more="loadMoreMedia"
           @toggle="layoutModel.mediaCollapsed = !layoutModel.mediaCollapsed"
         />
       </section>

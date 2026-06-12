@@ -3,6 +3,7 @@
   "appVersion": "0.1.0",
   "port": 6755,
   "amapKey": "",
+  "amapSecurityCode": "",
   "libraryRoots": [],
-  "backupBeforeWrite": true
+  "backupBeforeWrite": false
 }

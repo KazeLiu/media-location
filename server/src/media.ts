@@ -1,21 +1,112 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import exifr from 'exifr';
-import type { MediaItem } from '../../shared/contracts';
+import type { MediaItem, MediaPage } from '../../shared/contracts';
 import { readGpsFromXmpFile, type GpsValue } from './xmp';
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.heic', '.heif', '.tif', '.tiff', '.png']);
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.m4v', '.mts', '.m2ts']);
 
-export async function scanMediaDirectory(dir: string): Promise<MediaItem[]> {
-  const files = await collectDirectMediaFiles(path.resolve(dir));
-  const items = await Promise.all(files.map((filePath) => buildMediaItem(filePath, dir)));
+interface XmpPathCandidate {
+  xmpPath: string;
+  ownerMediaPath: string;
+  exact: boolean;
+}
 
-  return items.sort((a, b) => a.relativePath.localeCompare(b.relativePath, 'zh-Hans-CN', { numeric: true }));
+export async function scanMediaDirectory(dir: string): Promise<MediaItem[]> {
+  const page = await scanMediaDirectoryPage(dir, {
+    offset: 0,
+    limit: Number.MAX_SAFE_INTEGER,
+  });
+
+  return page.items;
+}
+
+export async function scanMediaDirectoryPage(
+  dir: string,
+  options: {
+    filter?: string;
+    offset?: number;
+    limit?: number;
+  } = {},
+): Promise<MediaPage> {
+  const scanRoot = path.resolve(dir);
+  const files = await collectDirectMediaFiles(scanRoot);
+  const filter = String(options.filter ?? '').trim().toLowerCase();
+  const offset = toNonNegativeInteger(options.offset, 0);
+  const limit = toNonNegativeInteger(options.limit, 120);
+  const sortedFiles = files.sort((a, b) =>
+    path.relative(scanRoot, a).localeCompare(path.relative(scanRoot, b), 'zh-Hans-CN', { numeric: true }),
+  );
+  const filteredFiles = filter
+    ? sortedFiles.filter((filePath) => path.basename(filePath).toLowerCase().includes(filter))
+    : sortedFiles;
+  const pageFiles = filteredFiles.slice(offset, offset + limit);
+  const items = await Promise.all(pageFiles.map((filePath) => buildMediaItem(filePath, scanRoot)));
+
+  return {
+    items,
+    total: filteredFiles.length,
+    offset,
+    limit,
+    filter,
+  };
 }
 
 export function getSameNameXmpPath(mediaPath: string): string {
   return `${mediaPath}.xmp`;
+}
+
+export function getXmpPathCandidates(mediaPath: string): string[] {
+  return getXmpPathCandidateEntries(mediaPath).map((candidate) => candidate.xmpPath);
+}
+
+function getXmpPathCandidateEntries(mediaPath: string): XmpPathCandidate[] {
+  const parsed = path.parse(mediaPath);
+  const candidates: XmpPathCandidate[] = [
+    {
+      xmpPath: getSameNameXmpPath(mediaPath),
+      ownerMediaPath: mediaPath,
+      exact: true,
+    },
+  ];
+  const nameParts = parsed.name.split('.').filter(Boolean);
+
+  for (let end = nameParts.length - 1; end >= 1; end -= 1) {
+    const ownerMediaPath = path.join(parsed.dir, `${nameParts.slice(0, end).join('.')}${parsed.ext}`);
+    candidates.push({
+      xmpPath: `${ownerMediaPath}.xmp`,
+      ownerMediaPath,
+      exact: false,
+    });
+  }
+
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    if (seen.has(candidate.xmpPath)) {
+      return false;
+    }
+    seen.add(candidate.xmpPath);
+    return true;
+  });
+}
+
+export async function resolveExistingXmpPath(mediaPath: string): Promise<string | null> {
+  for (const candidate of getXmpPathCandidateEntries(mediaPath)) {
+    if (!candidate.exact && (await mediaFileExists(candidate.ownerMediaPath))) {
+      continue;
+    }
+
+    if (await fileExists(candidate.xmpPath)) {
+      return candidate.xmpPath;
+    }
+  }
+
+  return null;
+}
+
+export async function resolveXmpPathForWrite(mediaPath: string): Promise<string> {
+  return (await resolveExistingXmpPath(mediaPath)) ?? getSameNameXmpPath(mediaPath);
 }
 
 export function isMediaFile(filePath: string): boolean {
@@ -44,10 +135,9 @@ async function collectDirectMediaFiles(dir: string): Promise<string[]> {
 async function buildMediaItem(filePath: string, scanRoot: string): Promise<MediaItem> {
   const extension = path.extname(filePath).toLowerCase();
   const mediaType: MediaItem['mediaType'] = IMAGE_EXTENSIONS.has(extension) ? 'image' : 'video';
-  const xmpPath = getSameNameXmpPath(filePath);
-  const xmpExists = await fileExists(xmpPath);
-  const xmpGps = xmpExists ? await readGpsFromXmpFile(xmpPath) : null;
-  const embeddedGps = !xmpExists && mediaType === 'image' ? await readEmbeddedGps(filePath) : null;
+  const xmpPath = await resolveExistingXmpPath(filePath);
+  const xmpGps = xmpPath ? await readGpsFromXmpFile(xmpPath) : null;
+  const embeddedGps = !xmpPath && mediaType === 'image' ? await readEmbeddedGps(filePath) : null;
   const gps = pickUsableGps(xmpGps, embeddedGps);
 
   return {
@@ -57,7 +147,7 @@ async function buildMediaItem(filePath: string, scanRoot: string): Promise<Media
     relativePath: path.relative(scanRoot, filePath).replaceAll(path.sep, '/'),
     extension,
     mediaType,
-    xmpPath: xmpExists ? xmpPath : null,
+    xmpPath,
     hasGps: gps !== null,
     latitude: gps?.latitude ?? null,
     longitude: gps?.longitude ?? null,
@@ -89,6 +179,15 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+async function mediaFileExists(filePath: string): Promise<boolean> {
+  try {
+    const stats = await fs.stat(filePath);
+    return stats.isFile() && isMediaFile(filePath);
+  } catch {
+    return false;
+  }
+}
+
 function pickUsableGps(...candidates: Array<GpsValue | null>): GpsValue | null {
   for (const candidate of candidates) {
     if (isUsableGps(candidate)) {
@@ -105,4 +204,13 @@ function isUsableGps(candidate: GpsValue | null): candidate is GpsValue {
   }
 
   return !(candidate.latitude === 0 && candidate.longitude === 0);
+}
+
+function toNonNegativeInteger(value: unknown, fallback: number): number {
+  const numberValue = Number(value ?? fallback);
+  if (!Number.isFinite(numberValue)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.floor(numberValue));
 }

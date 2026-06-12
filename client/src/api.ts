@@ -1,4 +1,11 @@
-import type { AppConfig, BrowseResponse, FolderPickerEntry, FolderPickerResponse, FolderPickerShortcuts } from '@shared/contracts';
+import type {
+  AppConfig,
+  BrowseResponse,
+  ClientLogPayload,
+  FolderPickerEntry,
+  FolderPickerResponse,
+  FolderPickerShortcuts,
+} from '@shared/contracts';
 
 const API_BASE = '/api';
 
@@ -30,8 +37,29 @@ export function saveConfig(config: Partial<AppConfig>): Promise<AppConfig> {
   });
 }
 
-export function browseDirectory(dir?: string): Promise<BrowseResponse> {
-  const query = dir ? `?dir=${encodeURIComponent(dir)}` : '';
+export function browseDirectory(
+  dir?: string,
+  options: {
+    filter?: string;
+    offset?: number;
+    limit?: number;
+  } = {},
+): Promise<BrowseResponse> {
+  const params = new URLSearchParams();
+  if (dir) {
+    params.set('dir', dir);
+  }
+  if (options.filter) {
+    params.set('filter', options.filter);
+  }
+  if (typeof options.offset === 'number') {
+    params.set('offset', String(options.offset));
+  }
+  if (typeof options.limit === 'number') {
+    params.set('limit', String(options.limit));
+  }
+
+  const query = params.toString() ? `?${params.toString()}` : '';
   return requestJson<BrowseResponse>(`/library/browse${query}`);
 }
 
@@ -52,8 +80,19 @@ export function getMediaThumbnailUrl(path: string): string {
   return `${API_BASE}/media/thumbnail?path=${encodeURIComponent(path)}`;
 }
 
+export function getMediaFileUrl(path: string): string {
+  return `${API_BASE}/media/file?path=${encodeURIComponent(path)}`;
+}
+
 export function setMediaGps(payload: { path: string; latitude: number; longitude: number }): Promise<{ path: string; xmpPath: string; latitude: number; longitude: number }> {
   return requestJson<{ path: string; xmpPath: string; latitude: number; longitude: number }>('/media/set-gps', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function writeClientLog(payload: ClientLogPayload): Promise<{ ok: boolean }> {
+  return requestJson<{ ok: boolean }>('/client-log', {
     method: 'POST',
     body: JSON.stringify(payload),
   });

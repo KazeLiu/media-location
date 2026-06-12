@@ -11,9 +11,15 @@ import {
   type CoordinateSystem,
   wgs84ToGcj02,
 } from '@shared/gps';
-import { getMediaThumbnailUrl } from '@/api';
+import { getMediaFileUrl, getMediaThumbnailUrl, writeClientLog } from '@/api';
 import { loadAmap, loadAmapPlugins } from '@/lib/amap';
 import { formatAmapSuggestions, normalizeAmapLngLat, type AmapSearchSuggestion } from '@/lib/amapSearch';
+import {
+  getMapMarkerMediaMode,
+  getNextExpandedPath,
+  isMapMarkerExpanded,
+  shouldShowMapVideoPlayButton,
+} from '@/lib/mapMarkerMedia';
 
 const INITIAL_ZOOM = 11;
 const SEARCH_RESULT_ZOOM = 17;
@@ -27,8 +33,7 @@ const props = withDefaults(
     amapKey: string;
     amapSecurityCode?: string;
     items: MediaItem[];
-    selectedId: string;
-    loading: boolean;
+    selectedPath: string;
   }>(),
   {
     amapSecurityCode: '',
@@ -63,7 +68,7 @@ let markerDragState: {
   moved: boolean;
 } | null = null;
 
-// Map block: owns AMap state, search text, raw AMap hover coordinate, and expanded marker id.
+// Map block: owns AMap state, search text, raw AMap hover coordinate, and expanded marker path.
 const mapModel = reactive({
   hint: '未加载',
   searchKeyword: '',
@@ -72,7 +77,7 @@ const mapModel = reactive({
   coordinateSystem: 'gcj02' as CoordinateSystem,
   layerMode: 'standard' as MapLayerMode,
   satelliteRoadNet: false,
-  expandedId: '',
+  expandedPath: '',
   draggingMarkerId: '',
   suppressMarkerClickUntil: 0,
 });
@@ -123,8 +128,8 @@ async function ensureMap(): Promise<void> {
     });
 
     map.on('click', (event: any) => {
-      if (mapModel.expandedId) {
-        mapModel.expandedId = '';
+      if (mapModel.expandedPath) {
+        mapModel.expandedPath = '';
         renderMarkers();
       }
 
@@ -365,11 +370,113 @@ async function copyLngLat(lng: number, lat: number): Promise<void> {
   const text = getCoordinateValueTextForSystem(coordinateText, mapModel.coordinateSystem);
   const labelText = getCoordinateLabelTextForSystem(coordinateText, mapModel.coordinateSystem);
   try {
-    await navigator.clipboard.writeText(text);
+    const result = await copyTextWithFallback(text);
+    if (result.method === 'fallback') {
+      void writeClientLog({
+        level: 'warn',
+        action: 'copy:clipboard-fallback',
+        message: 'navigator.clipboard was unavailable or rejected; fallback copy succeeded',
+        details: createClipboardLogDetails(result.clipboardError),
+      }).catch(() => undefined);
+    }
     ElMessage.success(`已复制 ${labelText}`);
-  } catch {
-    ElMessage.error(`复制 ${labelText} 失败`);
+  } catch (error) {
+    void writeClientLog({
+      level: 'error',
+      action: 'copy:clipboard',
+      message: error instanceof Error ? error.message : 'Clipboard copy failed',
+      details: createClipboardLogDetails(error),
+    }).catch(() => undefined);
+    const reason = window.isSecureContext
+      ? '浏览器拒绝写入剪贴板，请手动复制坐标'
+      : '当前地址不是 HTTPS/localhost，浏览器限制写入剪贴板，请手动复制坐标';
+    ElMessage.error(`复制 ${labelText} 失败：${reason}`);
   }
+}
+
+async function copyTextWithFallback(text: string): Promise<{ method: 'clipboard' | 'fallback'; clipboardError?: unknown }> {
+  let clipboardError: unknown = null;
+
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return { method: 'clipboard' };
+    } catch (error) {
+      clipboardError = error;
+    }
+  }
+
+  try {
+    if (copyTextWithTextarea(text)) {
+      return { method: 'fallback', clipboardError };
+    }
+  } catch (error) {
+    throw new Error(buildClipboardFailureMessage(clipboardError, error));
+  }
+
+  throw new Error(buildClipboardFailureMessage(clipboardError, new Error('document.execCommand returned false')));
+}
+
+function copyTextWithTextarea(text: string): boolean {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+
+  try {
+    textarea.focus();
+    textarea.select();
+    return document.execCommand('copy');
+  } finally {
+    document.body.removeChild(textarea);
+    window.getSelection()?.removeAllRanges();
+  }
+}
+
+function buildClipboardFailureMessage(clipboardError: unknown, fallbackError: unknown): string {
+  const clipboardMessage = errorToMessage(clipboardError);
+  const fallbackMessage = errorToMessage(fallbackError);
+  return `Clipboard copy failed. clipboard=${clipboardMessage}; fallback=${fallbackMessage}`;
+}
+
+function createClipboardLogDetails(error: unknown): Record<string, unknown> {
+  return {
+    error: errorToPlainObject(error),
+    isSecureContext: window.isSecureContext,
+    clipboardAvailable: Boolean(navigator.clipboard?.writeText),
+    href: window.location.href,
+    userAgent: navigator.userAgent,
+  };
+}
+
+function errorToPlainObject(error: unknown): Record<string, unknown> | null {
+  if (!error) {
+    return null;
+  }
+
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return {
+    message: String(error),
+  };
+}
+
+function errorToMessage(error: unknown): string {
+  if (!error) {
+    return 'none';
+  }
+
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
 function renderMarkers(): void {
@@ -384,7 +491,7 @@ function renderMarkers(): void {
     .filter((item) => item.hasGps && typeof item.longitude === 'number' && typeof item.latitude === 'number')
     .forEach((item) => {
       const point = wgs84ToGcj02(item.longitude as number, item.latitude as number);
-      const expanded = mapModel.expandedId === item.id;
+      const expanded = isMapMarkerExpanded(mapModel.expandedPath, item.path);
       let marker: any = null;
       const markerContent = createMarkerContent(item, expanded, () => marker);
       marker = new window.AMap.Marker({
@@ -393,14 +500,14 @@ function renderMarkers(): void {
         anchor: 'bottom-center',
         offset: new window.AMap.Pixel(0, 0),
         cursor: 'move',
-        zIndex: item.id === props.selectedId || expanded ? 300 : 100,
+        zIndex: item.path === props.selectedPath || expanded ? 300 : 100,
       });
 
       map.add(marker);
       markers.push(marker);
     });
 
-  const selected = props.items.find((item) => item.id === props.selectedId);
+  const selected = props.items.find((item) => item.path === props.selectedPath);
   if (selected?.hasGps && typeof selected.longitude === 'number' && typeof selected.latitude === 'number') {
     const point = wgs84ToGcj02(selected.longitude, selected.latitude);
     map.setCenter([point.lng, point.lat]);
@@ -408,9 +515,10 @@ function renderMarkers(): void {
 }
 
 function createMarkerContent(item: MediaItem, expanded: boolean, getMarker: () => any): HTMLElement {
-  const container = document.createElement('button');
-  container.type = 'button';
-  container.className = `map-media-marker${item.id === props.selectedId ? ' selected' : ''}${expanded ? ' expanded' : ''}`;
+  const container = document.createElement('div');
+  container.setAttribute('role', 'button');
+  container.tabIndex = 0;
+  container.className = `map-media-marker${item.path === props.selectedPath ? ' selected' : ''}${expanded ? ' expanded' : ''}`;
   container.title = item.name;
   container.addEventListener('pointerdown', (event) => {
     beginMarkerDrag(item, getMarker(), container, event);
@@ -430,7 +538,19 @@ function createMarkerContent(item: MediaItem, expanded: boolean, getMarker: () =
 
     clearSearchMarker();
     emit('select', item);
-    mapModel.expandedId = mapModel.expandedId === item.id ? '' : item.id;
+    mapModel.expandedPath = getNextExpandedPath(mapModel.expandedPath, item.path);
+    renderMarkers();
+  });
+  container.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    clearSearchMarker();
+    emit('select', item);
+    mapModel.expandedPath = getNextExpandedPath(mapModel.expandedPath, item.path);
     renderMarkers();
   });
 
@@ -438,31 +558,80 @@ function createMarkerContent(item: MediaItem, expanded: boolean, getMarker: () =
   bubble.className = 'marker-bubble';
   container.appendChild(bubble);
 
-  const media = item.mediaType === 'image' ? document.createElement('img') : document.createElement('div');
-  media.className = 'marker-media';
-  if (media instanceof HTMLImageElement) {
-    media.src = getMediaThumbnailUrl(item.path);
-    media.alt = item.name;
-    media.draggable = false;
-    media.onerror = () => {
-      media.classList.add('marker-media-fallback');
-    };
-  } else {
-    media.classList.add('marker-video-fallback');
-    media.textContent = 'VIDEO';
-  }
+  const media = createMarkerMediaElement(item);
   bubble.appendChild(media);
+
+  if (shouldShowMapVideoPlayButton(item.mediaType, expanded)) {
+    bubble.appendChild(createMarkerVideoPlayLink(item));
+  }
 
   const label = document.createElement('span');
   label.className = 'marker-label';
   label.textContent = item.gpsSource === 'xmp' ? 'XMP' : 'GPS';
-  bubble.appendChild(label);
+  if (item.mediaType !== 'video' || !expanded) {
+    bubble.appendChild(label);
+  }
 
   const pointer = document.createElement('span');
   pointer.className = 'marker-pointer';
   container.appendChild(pointer);
 
   return container;
+}
+
+function createMarkerMediaElement(item: MediaItem): HTMLElement {
+  const mediaMode = getMapMarkerMediaMode(item.mediaType);
+
+  if (mediaMode === 'image') {
+    const media = document.createElement('img');
+    media.className = 'marker-media';
+    media.src = getMediaThumbnailUrl(item.path);
+    media.alt = item.name;
+    media.draggable = false;
+    media.onerror = () => {
+      media.classList.add('marker-media-fallback');
+    };
+    return media;
+  }
+
+  const thumbnail = document.createElement('span');
+  thumbnail.className = 'marker-media marker-video-thumbnail';
+  thumbnail.setAttribute('role', 'img');
+  thumbnail.setAttribute('aria-label', `${item.name} 视频缩略图`);
+
+  const image = document.createElement('img');
+  image.className = 'marker-video-frame';
+  image.src = getMediaThumbnailUrl(item.path);
+  image.alt = item.name;
+  image.draggable = false;
+  image.onerror = () => {
+    image.remove();
+    thumbnail.classList.add('marker-video-placeholder');
+    if (!thumbnail.querySelector('.marker-video-cover-icon')) {
+      const fallbackIcon = document.createElement('span');
+      fallbackIcon.className = 'marker-video-cover-icon';
+      thumbnail.appendChild(fallbackIcon);
+    }
+  };
+  thumbnail.appendChild(image);
+  return thumbnail;
+}
+
+function createMarkerVideoPlayLink(item: MediaItem): HTMLElement {
+  const link = document.createElement('a');
+  link.className = 'marker-video-play';
+  link.href = getMediaFileUrl(item.path);
+  link.target = '_blank';
+  link.rel = 'noreferrer';
+  link.textContent = '新标签页播放';
+  link.setAttribute('aria-label', `在新标签页播放 ${item.name}`);
+  link.addEventListener('pointerdown', (event) => {
+    event.stopPropagation();
+  });
+  link.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
+  return link;
 }
 
 function beginMarkerDrag(item: MediaItem, marker: any, element: HTMLElement, event: PointerEvent): void {
@@ -604,7 +773,7 @@ function setMapDragEnabled(enabled: boolean): void {
 }
 
 watch(
-  () => [props.amapKey, props.amapSecurityCode, props.items, props.selectedId, mapModel.expandedId],
+  () => [props.amapKey, props.amapSecurityCode, props.items, props.selectedPath, mapModel.expandedPath],
   async () => {
     await ensureMap();
     renderMarkers();
@@ -629,7 +798,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="map-panel" v-loading="loading">
+  <section class="map-panel">
     <div ref="mapEl" class="map-canvas"></div>
 
     <div class="map-search">

@@ -6,6 +6,7 @@ export interface AppConfig {
   amapSecurityCode: string;
   libraryRoots: string[];
   backupBeforeWrite: boolean;
+  loadVideoContent: boolean;
 }
 
 export interface BrowseEntry {
@@ -30,12 +31,31 @@ export interface MediaItem {
   gpsSource: 'embedded' | 'xmp' | null;
 }
 
+export interface MediaPage {
+  items: MediaItem[];
+  total: number;
+  offset: number;
+  limit: number;
+  filter: string;
+}
+
 export interface BrowseResponse {
   currentDir: string;
   parentDir: string | null;
   rootDir: string | null;
   entries: BrowseEntry[];
   media: MediaItem[];
+  mediaTotal: number;
+  mediaOffset: number;
+  mediaLimit: number;
+  mediaFilter: string;
+}
+
+export interface ClientLogPayload {
+  level: 'info' | 'warn' | 'error';
+  action: string;
+  message?: string;
+  details?: unknown;
 }
 
 export interface FolderPickerEntry {

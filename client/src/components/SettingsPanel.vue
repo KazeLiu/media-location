@@ -18,7 +18,6 @@ const settingsModel = reactive({
   port: props.config.port,
   amapKey: props.config.amapKey,
   amapSecurityCode: props.config.amapSecurityCode,
-  backupBeforeWrite: props.config.backupBeforeWrite,
 });
 
 watch(
@@ -27,7 +26,6 @@ watch(
     settingsModel.port = config.port;
     settingsModel.amapKey = config.amapKey;
     settingsModel.amapSecurityCode = config.amapSecurityCode;
-    settingsModel.backupBeforeWrite = config.backupBeforeWrite;
   },
   { deep: true, immediate: true },
 );
@@ -38,7 +36,7 @@ function submit(): void {
     port: settingsModel.port,
     amapKey: settingsModel.amapKey.trim(),
     amapSecurityCode: settingsModel.amapSecurityCode.trim(),
-    backupBeforeWrite: settingsModel.backupBeforeWrite,
+    backupBeforeWrite: false,
   });
 }
 </script>
@@ -54,24 +52,42 @@ function submit(): void {
     :show-close="false"
     @close="emit('close')"
   >
-    <el-form label-position="top" class="settings-form">
-      <el-form-item label="端口">
-        <el-input-number v-model="settingsModel.port" :min="1" :max="65535" controls-position="right" />
-      </el-form-item>
+    <div class="settings-content">
+      <el-form label-position="top" class="settings-form">
+        <el-form-item label="端口">
+          <el-input-number v-model="settingsModel.port" :min="1" :max="65535" controls-position="right" />
+        </el-form-item>
 
-      <el-form-item label="高德 Web(JS API) Key">
-        <el-input v-model="settingsModel.amapKey" clearable />
-      </el-form-item>
+        <el-form-item label="高德 Web(JS API) Key">
+          <el-input v-model="settingsModel.amapKey" clearable />
+        </el-form-item>
 
-      <el-form-item label="高德安全密钥">
-        <el-input v-model="settingsModel.amapSecurityCode" clearable show-password />
-      </el-form-item>
+        <el-form-item label="高德安全密钥">
+          <el-input v-model="settingsModel.amapSecurityCode" clearable show-password />
+        </el-form-item>
+      </el-form>
 
-      <el-form-item label="写入前备份 XMP">
-        <el-switch v-model="settingsModel.backupBeforeWrite" inline-prompt active-text="开" inactive-text="关" />
-        <div class="settings-help">开启后，写入经纬度前会保留原 XMP 的备份副本；关闭则直接更新 XMP。</div>
-      </el-form-item>
-    </el-form>
+      <section class="usage-guide" aria-labelledby="usage-guide-title">
+        <h3 id="usage-guide-title">用法指南</h3>
+        <ol>
+          <li>
+            先到
+            <a href="https://console.amap.com/dev/key/app" target="_blank" rel="noreferrer">高德开发者中心</a>
+            申请 Web端(JS API) Key，拿到 Key 用于加载地图，安全密钥用于地址搜索。
+          </li>
+          <li>等待地图加载完成后，点击页面左上角的“选择文件夹”，选择照片所在路径；每次选择一个文件夹，可以重复添加。</li>
+          <li>
+            选择文件夹后，在目录面板进入目标目录，下方会加载当前目录的图片；已有经纬度会直接展示，没有经纬度时可点击“暂无经纬度”填写 WGS-84 坐标，也可以把图片拖到地图上写入位置。
+          </li>
+          <li>
+            点击有经纬度的图片，可以把照片显示在地图上作为参考；例如手机照片已有定位、相机照片没有定位时，可以固定手机照片，辅助对照位置并快速补齐相机照片坐标。
+          </li>
+        </ol>
+        <p>
+          Tips：切换目录时，未固定的照片会从地图上移除；需要跨目录对照时，请先固定照片。底部的 GCJ-02 和 WGS-84 切换只影响地图点击后复制到剪切板的坐标格式，写入照片时始终使用 WGS-84。
+        </p>
+      </section>
+    </div>
 
     <template #footer>
       <el-button :icon="RefreshRight" @click="emit('close')">收起</el-button>

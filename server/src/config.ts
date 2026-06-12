@@ -4,12 +4,13 @@ import type { AppConfig } from '../../shared/contracts';
 
 const DEFAULT_CONFIG: AppConfig = {
   appName: 'Media Location',
-  appVersion: '0.1.0',
+  appVersion: '0.4.7',
   port: 6755,
   amapKey: '',
   amapSecurityCode: '',
   libraryRoots: [],
   backupBeforeWrite: false,
+  loadVideoContent: false,
 };
 
 export function getConfigPath(): string {
@@ -56,6 +57,9 @@ function normalizeConfig(input: Partial<AppConfig>): AppConfig {
     amapKey: String(input.amapKey || '').trim(),
     amapSecurityCode: String(input.amapSecurityCode || '').trim(),
     libraryRoots,
-    backupBeforeWrite: Boolean(input.backupBeforeWrite ?? DEFAULT_CONFIG.backupBeforeWrite),
+    // 当前版本不暴露 XMP 写入前备份入口，统一关闭避免隐藏配置生效。
+    backupBeforeWrite: false,
+    // 历史兼容字段：工作台不再内嵌加载或播放视频，统一关闭。
+    loadVideoContent: false,
   };
 }
