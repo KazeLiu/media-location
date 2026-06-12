@@ -12,7 +12,7 @@
     "build:server": "esbuild server/src/index.ts --bundle --platform=node --format=cjs --target=node20 --external:exifr --outfile=dist/server/index.cjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package:win": "npm run build && pkg dist/server/index.cjs --targets node18-win-x64 --output dist/media-location.exe"
+    "package:win": "npm run build && pkg dist/server/index.cjs --targets node22-win-x64 --output dist/media-location.exe"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
