@@ -8,8 +8,11 @@ const DEFAULT_CONFIG: AppConfig = {
   port: 6755,
   amapKey: '',
   amapSecurityCode: '',
+  mapProvider: 'amap',
+  mapboxToken: '',
   libraryRoots: [],
   backupBeforeWrite: false,
+  largeWorkspace: false,
 };
 
 export function getConfigPath(): string {
@@ -55,7 +58,10 @@ function normalizeConfig(input: Partial<AppConfig>): AppConfig {
     port: Number.isFinite(port) && port > 0 ? port : DEFAULT_CONFIG.port,
     amapKey: String(input.amapKey || '').trim(),
     amapSecurityCode: String(input.amapSecurityCode || '').trim(),
+    mapProvider: input.mapProvider === 'mapbox' ? 'mapbox' : 'amap',
+    mapboxToken: String(input.mapboxToken || '').trim(),
     libraryRoots,
     backupBeforeWrite: Boolean(input.backupBeforeWrite ?? DEFAULT_CONFIG.backupBeforeWrite),
+    largeWorkspace: Boolean(input.largeWorkspace ?? DEFAULT_CONFIG.largeWorkspace),
   };
 }
