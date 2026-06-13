@@ -922,3 +922,9 @@ body {
     column-count: 3;
   }
 }
+
+.mapboxgl-ctrl.mapboxgl-ctrl-group{
+  position: absolute;
+  right: 18px !important;
+  bottom: 96px !important;
+}

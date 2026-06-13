@@ -302,13 +302,15 @@ function applyMapStyle(): void {
 
   if (mapModel.layerMode === 'satellite') {
     // 卫星图：根据路网开关选择样式
+    // satellite-streets-v12 使用标准的路网颜色，和 streets-v12 一致
     style = mapModel.satelliteRoadNet
-      ? 'mapbox://styles/mapbox/satellite-streets-v12'  // 带路网
+      ? 'mapbox://styles/mapbox/satellite-streets-v12'  // 带路网（标准颜色）
       : 'mapbox://styles/mapbox/satellite-v9';          // 纯卫星图
   }
 
   map.setStyle(style);
 }
+
 
 async function copyLngLat(lng: number, lat: number): Promise<void> {
   // Mapbox 返回的是 WGS84，需要转为 GCJ-02 以便显示双坐标
