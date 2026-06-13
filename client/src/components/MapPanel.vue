@@ -376,6 +376,10 @@ function clearSearchMarker(): void {
 }
 
 function switchMapLayer(mode: MapLayerMode): void {
+  if (props.mapProvider !== 'amap') {
+    return; // Mapbox 暂不支持图层切换
+  }
+
   if (mode === 'standard') {
     mapModel.layerMode = 'standard';
     mapModel.satelliteRoadNet = false;
@@ -388,6 +392,10 @@ function switchMapLayer(mode: MapLayerMode): void {
 }
 
 function toggleSatelliteRoadNet(value: boolean): void {
+  if (props.mapProvider !== 'amap') {
+    return; // Mapbox 暂不支持
+  }
+
   mapModel.satelliteRoadNet = value;
   applyMapLayers();
 }
