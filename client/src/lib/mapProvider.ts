@@ -7,6 +7,7 @@ export interface MapProviderConfig {
   onMarkerClick?: (item: MediaItem) => void;
   onMapClick?: (lng: number, lat: number) => void;
   onMarkerDragEnd?: (item: MediaItem, lng: number, lat: number) => void;
+  onMouseMove?: (lng: number, lat: number) => void;
 }
 
 export interface SearchResult {

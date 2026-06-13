@@ -45,6 +45,7 @@ export class AmapProvider extends MapProvider {
   private suppressMarkerClickUntil = 0;
   private expandedMarkerId = '';
   private currentSelectedId = '';
+  private currentItems: MediaItem[] = [];
 
   // 卫星图路网开关状态
   private satelliteRoadNetEnabled = false;
@@ -104,11 +105,16 @@ export class AmapProvider extends MapProvider {
       this.map.on('click', (event: any) => {
         if (this.expandedMarkerId) {
           this.expandedMarkerId = '';
-          this.renderMarkers([], this.currentSelectedId);
+          this.renderMarkers(this.currentItems, this.currentSelectedId);
         }
 
         this.clearSearchMarker();
         config.onMapClick?.(event.lnglat.lng, event.lnglat.lat);
+      });
+
+      // 绑定鼠标移动事件
+      this.map.on('mousemove', (event: any) => {
+        config.onMouseMove?.(event.lnglat.lng, event.lnglat.lat);
       });
 
       // 绑定拖放事件
@@ -202,6 +208,7 @@ export class AmapProvider extends MapProvider {
     }
 
     this.currentSelectedId = selectedId;
+    this.currentItems = items;
 
     // 清除旧标记
     this.clearMarkers();
@@ -450,7 +457,7 @@ export class AmapProvider extends MapProvider {
       this.clearSearchMarker();
       this.config?.onMarkerClick?.(item);
       this.expandedMarkerId = this.expandedMarkerId === item.id ? '' : item.id;
-      this.renderMarkers([], this.currentSelectedId);
+      this.renderMarkers(this.currentItems, this.currentSelectedId);
     });
 
     // 创建标记气泡

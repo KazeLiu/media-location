@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Setting } from '@element-plus/icons-vue';
 import type { AppConfig, BrowseResponse, MediaItem } from '@shared/contracts';
 import { browseDirectory, getConfig, saveConfig, setMediaGps } from './api';
 import DirectoryBrowser from './components/DirectoryBrowser.vue';
 import FolderPickerDialog from './components/FolderPickerDialog.vue';
 import MapPanel from './components/MapPanel.vue';
 import MediaTable from './components/MediaTable.vue';
-import SettingsPanel from './components/SettingsPanel.vue';
 
 // Settings block: keeps backend-owned app config and save status together.
 const settingsModel = reactive({
@@ -20,8 +18,11 @@ const settingsModel = reactive({
     port: 6755,
     amapKey: '',
     amapSecurityCode: '',
+    mapProvider: 'amap' as 'amap' | 'mapbox',
+    mapboxToken: '',
     libraryRoots: [] as string[],
     backupBeforeWrite: false,
+    largeWorkspace: false,
   },
 });
 
@@ -52,7 +53,7 @@ const pinModel = reactive({
 const layoutModel = reactive({
   directoryCollapsed: false,
   mediaCollapsed: false,
-  settingsOpen: false,
+  activeTab: 'operations',
   folderPickerOpen: false,
 });
 
@@ -64,7 +65,9 @@ async function loadInitial(): Promise<void> {
   try {
     const config = await getConfig();
     applyConfig(config);
-    layoutModel.settingsOpen = !config.amapKey;
+    if (!config.amapKey) {
+      layoutModel.activeTab = 'settings';
+    }
     await openPreferredRoot();
   } catch (error) {
     const message = error instanceof Error ? error.message : '加载失败';
@@ -77,13 +80,13 @@ async function loadInitial(): Promise<void> {
 
 function handleMapReady(): void {
   if (settingsModel.config.amapKey) {
-    layoutModel.settingsOpen = false;
+    layoutModel.activeTab = 'operations';
   }
 }
 
 function handleMapError(message: string): void {
   settingsModel.message = message;
-  layoutModel.settingsOpen = true;
+  layoutModel.activeTab = 'settings';
 }
 
 function applyConfig(config: AppConfig): void {
@@ -92,8 +95,11 @@ function applyConfig(config: AppConfig): void {
   settingsModel.config.port = config.port;
   settingsModel.config.amapKey = config.amapKey;
   settingsModel.config.amapSecurityCode = config.amapSecurityCode;
+  settingsModel.config.mapProvider = config.mapProvider;
+  settingsModel.config.mapboxToken = config.mapboxToken;
   settingsModel.config.libraryRoots = config.libraryRoots;
   settingsModel.config.backupBeforeWrite = config.backupBeforeWrite;
+  settingsModel.config.largeWorkspace = config.largeWorkspace ?? false;
 }
 
 async function openPreferredRoot(): Promise<void> {
@@ -255,7 +261,9 @@ async function saveSettings(config: AppConfig): Promise<void> {
     });
     applyConfig(saved);
     settingsModel.message = '已保存设置';
-    layoutModel.settingsOpen = !saved.amapKey;
+    if (saved.amapKey) {
+      layoutModel.activeTab = 'operations';
+    }
     ElMessage.success('设置已保存');
   } catch (error) {
     const message = error instanceof Error ? error.message : '保存失败';
@@ -264,6 +272,18 @@ async function saveSettings(config: AppConfig): Promise<void> {
   } finally {
     settingsModel.busy = false;
   }
+}
+
+function saveSettingsInline(): void {
+  saveSettings({
+    ...settingsModel.config,
+    port: settingsModel.config.port,
+    mapProvider: settingsModel.config.mapProvider,
+    amapKey: settingsModel.config.amapKey.trim(),
+    amapSecurityCode: settingsModel.config.amapSecurityCode.trim(),
+    mapboxToken: settingsModel.config.mapboxToken.trim(),
+    backupBeforeWrite: settingsModel.config.backupBeforeWrite,
+  });
 }
 
 async function addLibraryRoot(path: string): Promise<void> {
@@ -371,70 +391,113 @@ onMounted(loadInitial);
 
 <template>
   <div class="app-shell">
-    <MapPanel
-      class="map-layer"
-      :amap-key="settingsModel.config.amapKey"
-      :amap-security-code="settingsModel.config.amapSecurityCode"
-      :items="visibleMedia"
-      :selected-id="selectionModel.selectedId"
-      :loading="browserModel.busy"
-      @select="handleSelectItem"
-      @place="placeMedia"
-      @ready="handleMapReady"
-      @error="handleMapError"
-    />
+    <!-- 左侧操作面板 -->
+    <aside class="left-panel" :class="{ 'large-workspace': settingsModel.config.largeWorkspace }">
+      <div class="panel-header-bar">
+        <div class="brand-info">
+          <span>{{ settingsModel.config.appName }}</span>
+          <small>{{ settingsModel.config.appVersion }}</small>
+        </div>
+      </div>
 
-    <div class="floating-brand">
-      <span>{{ settingsModel.config.appName }}</span>
-      <small>{{ settingsModel.config.appVersion }}</small>
-    </div>
+      <el-tabs v-model="layoutModel.activeTab" class="operation-tabs" stretch>
+        <el-tab-pane label="基本操作" name="operations">
+          <div class="tab-content-wrapper">
+            <DirectoryBrowser
+              :current-dir="browserModel.currentDir"
+              :roots="roots"
+              :loading="browserModel.busy"
+              :collapsed="layoutModel.directoryCollapsed"
+              @add-root="layoutModel.folderPickerOpen = true"
+              @open-dir="openDirectory"
+              @remove-root="removeLibraryRoot"
+              @refresh="refresh"
+              @toggle="layoutModel.directoryCollapsed = !layoutModel.directoryCollapsed"
+            />
 
-    <el-button
-      class="settings-trigger"
-      circle
-      :icon="Setting"
-      @click="layoutModel.settingsOpen = true"
-    />
+            <MediaTable
+              :current-dir="browserModel.currentDir"
+              :items="browserModel.media"
+              :pinned-items="pinModel.items"
+              :selected-id="selectionModel.selectedId"
+              :loading="browserModel.busy"
+              :collapsed="layoutModel.mediaCollapsed"
+              :large-workspace="settingsModel.config.largeWorkspace"
+              @select="handleSelectItem"
+              @drag-start="handleDragStart"
+              @manual-place="placeMedia"
+              @toggle-pin="togglePinnedMedia"
+              @pin-current-dir="pinCurrentDirectory"
+              @toggle="layoutModel.mediaCollapsed = !layoutModel.mediaCollapsed"
+            />
+          </div>
+        </el-tab-pane>
 
-    <SettingsPanel
-      v-if="layoutModel.settingsOpen"
-      :config="settingsModel.config"
-      :busy="settingsModel.busy"
-      @save="saveSettings"
-      @close="layoutModel.settingsOpen = false"
-    />
+        <el-tab-pane label="设置" name="settings">
+          <div class="tab-content-wrapper">
+            <div class="settings-container">
+              <el-form label-position="top" class="settings-form">
+                <el-form-item label="端口">
+                  <el-input-number v-model="settingsModel.config.port" :min="1" :max="65535" controls-position="right" />
+                </el-form-item>
+
+                <el-form-item label="地图提供商">
+                  <el-radio-group v-model="settingsModel.config.mapProvider">
+                    <el-radio label="amap">高德地图</el-radio>
+                    <el-radio label="mapbox">Mapbox</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+
+                <el-form-item label="高德 Web(JS API) Key" v-if="settingsModel.config.mapProvider === 'amap'">
+                  <el-input v-model="settingsModel.config.amapKey" clearable />
+                </el-form-item>
+
+                <el-form-item label="高德安全密钥" v-if="settingsModel.config.mapProvider === 'amap'">
+                  <el-input v-model="settingsModel.config.amapSecurityCode" clearable show-password />
+                </el-form-item>
+
+                <el-form-item label="Mapbox Access Token" v-if="settingsModel.config.mapProvider === 'mapbox'">
+                  <el-input v-model="settingsModel.config.mapboxToken" clearable show-password />
+                </el-form-item>
+
+                <el-form-item label="写入前备份 XMP">
+                  <el-switch v-model="settingsModel.config.backupBeforeWrite" inline-prompt active-text="开" inactive-text="关" />
+                  <div class="settings-help">开启后，写入经纬度前会保留原 XMP 的备份副本；关闭则直接更新 XMP。</div>
+                </el-form-item>
+
+                <el-form-item label="大工作区模式">
+                  <el-switch v-model="settingsModel.config.largeWorkspace" inline-prompt active-text="开" inactive-text="关" />
+                  <div class="settings-help">开启后，左侧工作区将占据 50% 屏幕宽度，可显示更多媒体内容。</div>
+                </el-form-item>
+              </el-form>
+
+              <div class="settings-actions">
+                <el-button type="primary" :loading="settingsModel.busy" @click="saveSettingsInline">保存设置</el-button>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </aside>
+
+    <!-- 右侧地图面板 -->
+    <main class="right-panel">
+      <MapPanel
+        class="map-layer"
+        :map-provider="settingsModel.config.mapProvider"
+        :amap-key="settingsModel.config.amapKey"
+        :amap-security-code="settingsModel.config.amapSecurityCode"
+        :mapbox-token="settingsModel.config.mapboxToken"
+        :items="visibleMedia"
+        :selected-id="selectionModel.selectedId"
+        :loading="browserModel.busy"
+        @select="handleSelectItem"
+        @place="placeMedia"
+        @ready="handleMapReady"
+        @error="handleMapError"
+      />
+    </main>
 
     <FolderPickerDialog v-model="layoutModel.folderPickerOpen" @confirm="addLibraryRoot" />
-
-    <main class="floating-workbench">
-      <section class="stack-column" :class="{ 'media-is-collapsed': layoutModel.mediaCollapsed }">
-        <DirectoryBrowser
-          :current-dir="browserModel.currentDir"
-          :roots="roots"
-          :loading="browserModel.busy"
-          :collapsed="layoutModel.directoryCollapsed"
-          @add-root="layoutModel.folderPickerOpen = true"
-          @open-dir="openDirectory"
-          @remove-root="removeLibraryRoot"
-          @refresh="refresh"
-          @toggle="layoutModel.directoryCollapsed = !layoutModel.directoryCollapsed"
-        />
-
-        <MediaTable
-          :current-dir="browserModel.currentDir"
-          :items="browserModel.media"
-          :pinned-items="pinModel.items"
-          :selected-id="selectionModel.selectedId"
-          :loading="browserModel.busy"
-          :collapsed="layoutModel.mediaCollapsed"
-          @select="handleSelectItem"
-          @drag-start="handleDragStart"
-          @manual-place="placeMedia"
-          @toggle-pin="togglePinnedMedia"
-          @pin-current-dir="pinCurrentDirectory"
-          @toggle="layoutModel.mediaCollapsed = !layoutModel.mediaCollapsed"
-        />
-      </section>
-    </main>
   </div>
 </template>

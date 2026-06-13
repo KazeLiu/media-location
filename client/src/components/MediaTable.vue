@@ -13,6 +13,7 @@ const props = defineProps<{
   selectedId: string;
   loading: boolean;
   collapsed: boolean;
+  largeWorkspace?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -148,7 +149,7 @@ function parseCoordinate(source: string): { longitude: number; latitude: number 
             </div>
 
             <template v-if="displayedItems.length">
-              <div class="media-grid">
+              <div class="media-grid" :class="{ 'large-workspace': largeWorkspace }">
                 <el-card
                   v-for="item in displayedItems"
                   :key="item.id"

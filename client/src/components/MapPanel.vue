@@ -9,29 +9,26 @@ import {
   getCoordinateLabelTextForSystem,
   getCoordinateValueTextForSystem,
   type CoordinateSystem,
-  wgs84ToGcj02,
 } from '@shared/gps';
-import { getMediaThumbnailUrl } from '@/api';
-import { loadAmap, loadAmapPlugins } from '@/lib/amap';
-import { formatAmapSuggestions, normalizeAmapLngLat, type AmapSearchSuggestion } from '@/lib/amapSearch';
+import type { MapProvider } from '@/lib/mapProvider';
+import { AmapProvider } from '@/lib/providers';
 
-const INITIAL_ZOOM = 11;
 const SEARCH_RESULT_ZOOM = 17;
-const DEFAULT_CENTER = [116.397428, 39.90923];
 type MapLayerMode = 'standard' | 'satellite';
-
-type SearchSuggestion = AmapSearchSuggestion;
 
 const props = withDefaults(
   defineProps<{
+    mapProvider: 'amap' | 'mapbox';
     amapKey: string;
     amapSecurityCode?: string;
+    mapboxToken?: string;
     items: MediaItem[];
     selectedId: string;
     loading: boolean;
   }>(),
   {
     amapSecurityCode: '',
+    mapboxToken: '',
   },
 );
 
@@ -43,27 +40,9 @@ const emit = defineEmits<{
 }>();
 
 const mapEl = ref<HTMLDivElement | null>(null);
-let map: any = null;
-let autocomplete: any = null;
-let placeSearch: any = null;
-let standardLayer: any = null;
-let satelliteLayer: any = null;
-let roadNetLayer: any = null;
-let markers: any[] = [];
-let searchMarker: any = null;
-let restoreMapDragTimer: number | null = null;
-let markerDragState: {
-  item: MediaItem;
-  marker: any;
-  pointerId: number;
-  startClientX: number;
-  startClientY: number;
-  tipOffsetX: number;
-  tipOffsetY: number;
-  moved: boolean;
-} | null = null;
+let provider: MapProvider | null = null;
 
-// Map block: owns AMap state, search text, raw AMap hover coordinate, and expanded marker id.
+// Map block: owns search text, mouse coordinate, and UI state
 const mapModel = reactive({
   hint: '未加载',
   searchKeyword: '',
@@ -72,9 +51,6 @@ const mapModel = reactive({
   coordinateSystem: 'gcj02' as CoordinateSystem,
   layerMode: 'standard' as MapLayerMode,
   satelliteRoadNet: false,
-  expandedId: '',
-  draggingMarkerId: '',
-  suppressMarkerClickUntil: 0,
 });
 
 const mouseCoordText = computed(() => {
@@ -85,281 +61,147 @@ const mouseCoordText = computed(() => {
   return formatGcj02Wgs84CoordinateText(mapModel.mouseCoord.lng, mapModel.mouseCoord.lat);
 });
 
-async function ensureMap(): Promise<void> {
-  if (!props.amapKey || !mapEl.value || map) {
-    if (!props.amapKey) {
-      mapModel.hint = '需要高德 Key';
-    }
+/**
+ * 初始化地图 Provider
+ */
+async function initMap(): Promise<void> {
+  if (!mapEl.value) {
     return;
   }
 
   try {
-    await loadAmap(props.amapKey, props.amapSecurityCode);
-    const AMap = window.AMap;
-    await loadAmapPlugins(['AMap.ToolBar', 'AMap.Scale', 'AMap.AutoComplete', 'AMap.PlaceSearch']);
-
-    map = new AMap.Map(mapEl.value, {
-      zoom: INITIAL_ZOOM,
-      center: DEFAULT_CENTER,
-      viewMode: '2D',
-    });
-    applyMapLayers();
-    const AutocompleteCtor = AMap.AutoComplete || AMap.Autocomplete;
-    if (typeof AutocompleteCtor !== 'function' || typeof AMap.PlaceSearch !== 'function') {
-      throw new Error('高德搜索插件加载失败');
+    // 根据配置创建对应的 Provider
+    if (props.mapProvider === 'amap') {
+      if (!props.amapKey) {
+        mapModel.hint = '需要高德 Key';
+        emit('error', '需要高德 Key');
+        return;
+      }
+      provider = new AmapProvider(props.amapKey, props.amapSecurityCode);
+    } else {
+      // TODO: Mapbox Provider
+      throw new Error('Mapbox 地图暂未实现');
     }
 
-    autocomplete = new AutocompleteCtor({ city: '全国', citylimit: false });
-    placeSearch = new AMap.PlaceSearch({ city: '全国', citylimit: false, autoFitView: false });
-
-    map.addControl(new AMap.ToolBar({ position: { right: '18px', bottom: '96px' } }));
-    map.addControl(new AMap.Scale());
-
-    map.on('mousemove', (event: any) => {
-      mapModel.mouseCoord = {
-        lng: event.lnglat.lng,
-        lat: event.lnglat.lat,
-      };
+    // 初始化地图
+    await provider.init({
+      container: mapEl.value,
+      onReady: () => {
+        mapModel.hint = '已连接';
+        emit('ready');
+        // 初始渲染标记
+        provider?.renderMarkers(props.items, props.selectedId);
+      },
+      onError: (message) => {
+        mapModel.hint = message;
+        emit('error', message);
+      },
+      onMarkerClick: (item) => {
+        emit('select', item);
+      },
+      onMapClick: (lng, lat) => {
+        handleMapClick(lng, lat);
+      },
+      onMarkerDragEnd: (item, lng, lat) => {
+        emit('select', item);
+        emit('place', {
+          path: item.path,
+          longitude: lng,
+          latitude: lat,
+        });
+      },
+      onMouseMove: (lng, lat) => {
+        mapModel.mouseCoord = { lng, lat };
+      },
     });
 
-    map.on('click', (event: any) => {
-      if (mapModel.expandedId) {
-        mapModel.expandedId = '';
-        renderMarkers();
-      }
-
-      clearSearchMarker();
-      void copyLngLat(event.lnglat.lng, event.lnglat.lat);
-    });
-
-    const container = map.getContainer();
+    // 绑定拖放事件（需要访问 props.items）
+    const container = mapEl.value;
     container.addEventListener('dragover', handleDragOver);
     container.addEventListener('drop', handleDrop);
-
-    mapModel.hint = '已连接';
-    emit('ready');
-    renderMarkers();
   } catch (error) {
-    const message = error instanceof Error ? error.message : '高德地图加载失败';
+    const message = error instanceof Error ? error.message : '地图加载失败';
     mapModel.hint = message;
     emit('error', message);
   }
 }
 
+/**
+ * 处理地图点击
+ */
+async function handleMapClick(lng: number, lat: number): Promise<void> {
+  provider?.clearSearchMarker();
+  await copyLngLat(lng, lat);
+}
+
+/**
+ * 处理拖放悬停
+ */
 function handleDragOver(event: DragEvent): void {
   event.preventDefault();
 }
 
+/**
+ * 处理拖放释放
+ */
 function handleDrop(event: DragEvent): void {
-  if (!map || !window.AMap) {
+  if (!provider) {
     return;
   }
 
-  event.preventDefault();
-  const droppedPath = event.dataTransfer?.getData('text/plain');
-  const item = props.items.find((entry) => entry.path === droppedPath || entry.id === droppedPath);
-  if (!item) {
-    return;
-  }
-
-  clearSearchMarker();
-  const container = map.getContainer();
-  const rect = container.getBoundingClientRect();
-  const pixel = new window.AMap.Pixel(event.clientX - rect.left, event.clientY - rect.top);
-  const lnglat = map.containerToLngLat(pixel);
-  const wgs84 = gcj02ToWgs84(lnglat.lng, lnglat.lat);
-  emit('select', item);
-  emit('place', {
-    path: item.path,
-    longitude: wgs84.lng,
-    latitude: wgs84.lat,
-  });
+  provider.handleDrop(event, props.items);
 }
 
+/**
+ * 搜索地址
+ */
 async function searchAddress(): Promise<void> {
-  if (!mapModel.searchKeyword.trim()) {
-    return;
-  }
-
-  await locateKeyword(mapModel.searchKeyword.trim());
-}
-
-function fetchSearchSuggestions(keyword: string, callback: (items: SearchSuggestion[]) => void): void {
-  if (!autocomplete || !keyword.trim()) {
-    callback([]);
-    return;
-  }
-
-  autocomplete.search(keyword.trim(), (status: string, result: any) => {
-    if (status !== 'complete') {
-      handleAmapSearchError(result);
-      callback([]);
-      return;
-    }
-
-    callback(formatAmapSuggestions(result));
-  });
-}
-
-async function handleSuggestionSelect(suggestion: SearchSuggestion): Promise<void> {
-  mapModel.searchKeyword = suggestion.value;
-  const location = normalizeAmapLngLat(suggestion.location);
-
-  if (location) {
-    moveToSearchResult(location.lng, location.lat, suggestion.name || suggestion.value);
-    ElMessage.success('已定位到搜索结果');
-    return;
-  }
-
-  await locateKeyword(suggestion.name || suggestion.value);
-}
-
-async function locateKeyword(keyword: string): Promise<void> {
-  if (!map || !placeSearch || !keyword.trim()) {
+  if (!provider || !mapModel.searchKeyword.trim()) {
     return;
   }
 
   mapModel.searching = true;
-  placeSearch.search(keyword.trim(), (status: string, result: any) => {
-    mapModel.searching = false;
-    const location = normalizeAmapLngLat(result?.poiList?.pois?.[0]?.location);
-
-    if (status === 'complete' && location) {
-      moveToSearchResult(location.lng, location.lat, result?.poiList?.pois?.[0]?.name || keyword);
+  try {
+    const result = await provider.search(mapModel.searchKeyword.trim());
+    if (result) {
+      provider.showSearchMarker(result);
       ElMessage.success('已定位到搜索结果');
-      return;
+    } else {
+      ElMessage.warning('没有找到这个地址');
     }
-
-    if (status !== 'complete' && handleAmapSearchError(result)) {
-      return;
-    }
-
-    ElMessage.warning('没有找到这个地址');
-  });
-}
-
-function handleAmapSearchError(result: unknown): boolean {
-  if (result !== 'INVALID_USER_SCODE') {
-    return false;
+  } catch (error) {
+    ElMessage.error('搜索失败');
+  } finally {
+    mapModel.searching = false;
   }
-
-  const message = 'POI 搜索需要填写高德安全密钥';
-  mapModel.hint = message;
-  emit('error', message);
-  return true;
 }
 
-function moveToSearchResult(lng: number, lat: number, label: string): void {
-  map?.setZoomAndCenter?.(SEARCH_RESULT_ZOOM, [lng, lat]);
-  showSearchMarker(lng, lat, label);
-}
-
-function showSearchMarker(lng: number, lat: number, label: string): void {
-  if (!map || !window.AMap) {
-    return;
-  }
-
-  clearSearchMarker();
-  const content = createSearchMarkerContent(label);
-  searchMarker = new window.AMap.Marker({
-    position: [lng, lat],
-    content,
-    anchor: 'bottom-center',
-    offset: new window.AMap.Pixel(0, 0),
-    cursor: 'default',
-    zIndex: 600,
-  });
-  map.add(searchMarker);
-}
-
-function createSearchMarkerContent(label: string): HTMLElement {
-  const container = document.createElement('button');
-  container.type = 'button';
-  container.className = 'map-search-marker';
-  container.title = label || '搜索结果';
-  container.addEventListener('pointerdown', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-  });
-  container.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-  });
-
-  const pin = document.createElement('span');
-  pin.className = 'search-marker-pin';
-  container.appendChild(pin);
-
-  const dot = document.createElement('span');
-  dot.className = 'search-marker-dot';
-  pin.appendChild(dot);
-
-  return container;
-}
-
-function clearSearchMarker(): void {
-  searchMarker?.remove?.();
-  searchMarker = null;
-}
-
+/**
+ * 切换地图图层
+ */
 function switchMapLayer(mode: MapLayerMode): void {
   if (mode === 'standard') {
     mapModel.layerMode = 'standard';
     mapModel.satelliteRoadNet = false;
-    applyMapLayers();
+    provider?.setLayerMode('standard');
     return;
   }
 
   mapModel.layerMode = 'satellite';
-  applyMapLayers();
+  provider?.setLayerMode('satellite');
 }
 
+/**
+ * 切换卫星图路网
+ */
 function toggleSatelliteRoadNet(value: boolean): void {
   mapModel.satelliteRoadNet = value;
-  applyMapLayers();
+  provider?.setSatelliteRoadNet?.(value);
 }
 
-function applyMapLayers(): void {
-  if (!map || !window.AMap) {
-    return;
-  }
-
-  ensureMapLayers();
-  if (mapModel.layerMode === 'satellite') {
-    map.setLayers([satelliteLayer]);
-    setRoadNetVisible(mapModel.satelliteRoadNet);
-    return;
-  }
-
-  setRoadNetVisible(false);
-  map.setLayers([standardLayer]);
-}
-
-function ensureMapLayers(): void {
-  if (!window.AMap) {
-    return;
-  }
-
-  standardLayer ||= new window.AMap.TileLayer();
-  satelliteLayer ||= new window.AMap.TileLayer.Satellite();
-  roadNetLayer ||= new window.AMap.TileLayer.RoadNet();
-}
-
-function setRoadNetVisible(visible: boolean): void {
-  if (!roadNetLayer) {
-    return;
-  }
-
-  if (visible) {
-    roadNetLayer.setMap?.(map);
-    roadNetLayer.show?.();
-    return;
-  }
-
-  roadNetLayer.hide?.();
-  roadNetLayer.setMap?.(null);
-}
-
+/**
+ * 复制经纬度到剪贴板
+ */
 async function copyLngLat(lng: number, lat: number): Promise<void> {
   const coordinateText = formatGcj02Wgs84CoordinateText(lng, lat);
   const text = getCoordinateValueTextForSystem(coordinateText, mapModel.coordinateSystem);
@@ -372,259 +214,45 @@ async function copyLngLat(lng: number, lat: number): Promise<void> {
   }
 }
 
-function renderMarkers(): void {
-  if (!map || !window.AMap) {
-    return;
-  }
-
-  markers.forEach((marker) => marker.remove());
-  markers = [];
-
-  props.items
-    .filter((item) => item.hasGps && typeof item.longitude === 'number' && typeof item.latitude === 'number')
-    .forEach((item) => {
-      const point = wgs84ToGcj02(item.longitude as number, item.latitude as number);
-      const expanded = mapModel.expandedId === item.id;
-      let marker: any = null;
-      const markerContent = createMarkerContent(item, expanded, () => marker);
-      marker = new window.AMap.Marker({
-        position: [point.lng, point.lat],
-        content: markerContent,
-        anchor: 'bottom-center',
-        offset: new window.AMap.Pixel(0, 0),
-        cursor: 'move',
-        zIndex: item.id === props.selectedId || expanded ? 300 : 100,
-      });
-
-      map.add(marker);
-      markers.push(marker);
-    });
-
-  const selected = props.items.find((item) => item.id === props.selectedId);
-  if (selected?.hasGps && typeof selected.longitude === 'number' && typeof selected.latitude === 'number') {
-    const point = wgs84ToGcj02(selected.longitude, selected.latitude);
-    map.setCenter([point.lng, point.lat]);
-  }
-}
-
-function createMarkerContent(item: MediaItem, expanded: boolean, getMarker: () => any): HTMLElement {
-  const container = document.createElement('button');
-  container.type = 'button';
-  container.className = `map-media-marker${item.id === props.selectedId ? ' selected' : ''}${expanded ? ' expanded' : ''}`;
-  container.title = item.name;
-  container.addEventListener('pointerdown', (event) => {
-    beginMarkerDrag(item, getMarker(), container, event);
-  });
-  container.addEventListener('pointerup', () => {
-    finishMarkerDragFromPointer();
-  });
-  container.addEventListener('pointercancel', () => {
-    cancelMarkerDrag();
-  });
-  container.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (Date.now() < mapModel.suppressMarkerClickUntil) {
-      return;
-    }
-
-    clearSearchMarker();
-    emit('select', item);
-    mapModel.expandedId = mapModel.expandedId === item.id ? '' : item.id;
-    renderMarkers();
-  });
-
-  const bubble = document.createElement('span');
-  bubble.className = 'marker-bubble';
-  container.appendChild(bubble);
-
-  const media = item.mediaType === 'image' ? document.createElement('img') : document.createElement('div');
-  media.className = 'marker-media';
-  if (media instanceof HTMLImageElement) {
-    media.src = getMediaThumbnailUrl(item.path);
-    media.alt = item.name;
-    media.draggable = false;
-    media.onerror = () => {
-      media.classList.add('marker-media-fallback');
-    };
-  } else {
-    media.classList.add('marker-video-fallback');
-    media.textContent = 'VIDEO';
-  }
-  bubble.appendChild(media);
-
-  const label = document.createElement('span');
-  label.className = 'marker-label';
-  label.textContent = item.gpsSource === 'xmp' ? 'XMP' : 'GPS';
-  bubble.appendChild(label);
-
-  const pointer = document.createElement('span');
-  pointer.className = 'marker-pointer';
-  container.appendChild(pointer);
-
-  return container;
-}
-
-function beginMarkerDrag(item: MediaItem, marker: any, element: HTMLElement, event: PointerEvent): void {
-  if (!marker || !map || !window.AMap) {
-    return;
-  }
-
-  event.preventDefault();
-  event.stopPropagation();
-  clearSearchMarker();
-
-  const rect = element.getBoundingClientRect();
-  markerDragState = {
-    item,
-    marker,
-    pointerId: event.pointerId,
-    startClientX: event.clientX,
-    startClientY: event.clientY,
-    tipOffsetX: rect.left + rect.width / 2 - event.clientX,
-    tipOffsetY: rect.bottom - event.clientY,
-    moved: false,
-  };
-
-  element.setPointerCapture?.(event.pointerId);
-  document.addEventListener('pointermove', handleMarkerPointerMove);
-  document.addEventListener('pointerup', handleMarkerPointerUp);
-  document.addEventListener('pointercancel', handleMarkerPointerCancel);
-
-  mapModel.draggingMarkerId = item.id;
-  setMapDragEnabled(false);
-
-  if (restoreMapDragTimer !== null) {
-    window.clearTimeout(restoreMapDragTimer);
-    restoreMapDragTimer = null;
-  }
-}
-
-function handleMarkerPointerMove(event: PointerEvent): void {
-  if (!markerDragState || markerDragState.pointerId !== event.pointerId || !map || !window.AMap) {
-    return;
-  }
-
-  event.preventDefault();
-  event.stopPropagation();
-
-  const movedDistance = Math.hypot(event.clientX - markerDragState.startClientX, event.clientY - markerDragState.startClientY);
-  markerDragState.moved = markerDragState.moved || movedDistance > 3;
-
-  const container = map.getContainer();
-  const rect = container.getBoundingClientRect();
-  const pixel = new window.AMap.Pixel(
-    event.clientX + markerDragState.tipOffsetX - rect.left,
-    event.clientY + markerDragState.tipOffsetY - rect.top,
-  );
-  const lnglat = map.containerToLngLat(pixel);
-  markerDragState.marker.setPosition(lnglat);
-}
-
-function handleMarkerPointerUp(event: PointerEvent): void {
-  if (markerDragState?.pointerId !== event.pointerId) {
-    return;
-  }
-
-  event.preventDefault();
-  event.stopPropagation();
-  finishMarkerDragFromPointer();
-}
-
-function handleMarkerPointerCancel(event: PointerEvent): void {
-  if (markerDragState?.pointerId !== event.pointerId) {
-    return;
-  }
-
-  cancelMarkerDrag();
-}
-
-function finishMarkerDragFromPointer(): void {
-  const state = markerDragState;
-  if (!state) {
-    scheduleRestoreMapDrag();
-    return;
-  }
-
-  cleanupMarkerDragListeners();
-  mapModel.draggingMarkerId = '';
-  if (state.moved) {
-    mapModel.suppressMarkerClickUntil = Date.now() + 350;
-  }
-  scheduleRestoreMapDrag();
-
-  if (!state.moved) {
-    markerDragState = null;
-    return;
-  }
-
-  const lnglat = state.marker.getPosition?.();
-  markerDragState = null;
-  if (!lnglat || !Number.isFinite(lnglat.lng) || !Number.isFinite(lnglat.lat)) {
-    return;
-  }
-
-  emit('select', state.item);
-  const wgs84 = gcj02ToWgs84(lnglat.lng, lnglat.lat);
-  emit('place', {
-    path: state.item.path,
-    longitude: wgs84.lng,
-    latitude: wgs84.lat,
-  });
-}
-
-function cancelMarkerDrag(): void {
-  cleanupMarkerDragListeners();
-  markerDragState = null;
-  mapModel.draggingMarkerId = '';
-  scheduleRestoreMapDrag();
-}
-
-function cleanupMarkerDragListeners(): void {
-  document.removeEventListener('pointermove', handleMarkerPointerMove);
-  document.removeEventListener('pointerup', handleMarkerPointerUp);
-  document.removeEventListener('pointercancel', handleMarkerPointerCancel);
-}
-
-function scheduleRestoreMapDrag(): void {
-  if (restoreMapDragTimer !== null) {
-    window.clearTimeout(restoreMapDragTimer);
-  }
-
-  restoreMapDragTimer = window.setTimeout(() => {
-    if (!mapModel.draggingMarkerId) {
-      setMapDragEnabled(true);
-    }
-    restoreMapDragTimer = null;
-  }, 0);
-}
-
-function setMapDragEnabled(enabled: boolean): void {
-  map?.setStatus?.({ dragEnable: enabled });
-}
-
+/**
+ * 监听 items 和 selectedId 变化，重新渲染标记
+ */
 watch(
-  () => [props.amapKey, props.amapSecurityCode, props.items, props.selectedId, mapModel.expandedId],
-  async () => {
-    await ensureMap();
-    renderMarkers();
+  () => [props.items, props.selectedId] as const,
+  () => {
+    provider?.renderMarkers(props.items, props.selectedId);
   },
-  { deep: true, immediate: true },
+  { deep: true },
 );
 
-onMounted(ensureMap);
+/**
+ * 监听地图 Provider 切换
+ */
+watch(
+  () => [props.mapProvider, props.amapKey, props.mapboxToken] as const,
+  async () => {
+    // 销毁旧 Provider
+    if (provider) {
+      const container = mapEl.value;
+      container?.removeEventListener('dragover', handleDragOver);
+      container?.removeEventListener('drop', handleDrop);
+      provider.destroy();
+      provider = null;
+    }
+
+    // 重新初始化
+    await initMap();
+  },
+);
+
+onMounted(initMap);
 
 onBeforeUnmount(() => {
-  markers.forEach((marker) => marker.remove());
-  clearSearchMarker();
-  cleanupMarkerDragListeners();
-  if (restoreMapDragTimer !== null) {
-    window.clearTimeout(restoreMapDragTimer);
-  }
-  const container = map?.getContainer?.();
-  container?.removeEventListener?.('dragover', handleDragOver);
-  container?.removeEventListener?.('drop', handleDrop);
-  map?.destroy?.();
+  const container = mapEl.value;
+  container?.removeEventListener('dragover', handleDragOver);
+  container?.removeEventListener('drop', handleDrop);
+  provider?.destroy();
+  provider = null;
 });
 </script>
 
@@ -633,20 +261,16 @@ onBeforeUnmount(() => {
     <div ref="mapEl" class="map-canvas"></div>
 
     <div class="map-search">
-      <el-autocomplete
+      <el-input
         v-model="mapModel.searchKeyword"
-        placeholder="搜索地址"
-        :fetch-suggestions="fetchSearchSuggestions"
+        placeholder="搜索地址（暂不支持建议）"
         clearable
-        value-key="value"
-        popper-class="map-search-popper"
-        @select="handleSuggestionSelect"
         @keydown.enter="searchAddress"
       >
         <template #append>
           <el-button :icon="Search" :loading="mapModel.searching" @click="searchAddress" />
         </template>
-      </el-autocomplete>
+      </el-input>
     </div>
 
     <div class="map-coordinate">
@@ -693,3 +317,4 @@ onBeforeUnmount(() => {
     <el-tag class="map-hint" effect="light">{{ mapModel.hint }}</el-tag>
   </section>
 </template>
+```
