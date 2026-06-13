@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus';
 import { ArrowDown, ArrowRight, Check, Close, Location, Picture, VideoCamera } from '@element-plus/icons-vue';
 import { Pin, PinOff } from 'lucide-vue-next';
 import type { MediaItem } from '@shared/contracts';
-import { getMediaThumbnailUrl } from '@/api';
+import { getMediaFileUrl, getMediaThumbnailUrl } from '@/api';
 
 const props = defineProps<{
   currentDir: string;
@@ -174,8 +174,32 @@ function parseCoordinate(source: string): { longitude: number; latitude: number 
                         </div>
                       </template>
                     </el-image>
-                    <div v-else class="preview-fallback video-placeholder">
-                      <el-icon><VideoCamera /></el-icon>
+                    <div v-else class="preview-video-cover" role="img" :aria-label="`${item.name} 视频缩略图`">
+                      <el-image
+                        :src="getMediaThumbnailUrl(item.path)"
+                        fit="contain"
+                        lazy
+                        class="preview-video-thumbnail"
+                      >
+                        <template #error>
+                          <div class="video-cover-fallback">
+                            <el-icon><VideoCamera /></el-icon>
+                          </div>
+                        </template>
+                      </el-image>
+                      <a
+                        class="video-play-badge"
+                        :href="getMediaFileUrl(item.path)"
+                        target="_blank"
+                        rel="noreferrer"
+                        draggable="false"
+                        :aria-label="`在新标签页播放 ${item.name}`"
+                        @click.stop
+                        @dragstart.stop.prevent
+                      >
+                        <el-icon><VideoCamera /></el-icon>
+                        新标签播放
+                      </a>
                     </div>
                   </div>
 

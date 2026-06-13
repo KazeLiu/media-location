@@ -390,19 +390,14 @@ export class MapboxProvider extends MapProvider {
     container.appendChild(bubble);
 
     // 创建缩略图
-    const media = item.mediaType === 'image' ? document.createElement('img') : document.createElement('div');
+    const media = document.createElement('img');
     media.className = 'marker-media';
-    if (media instanceof HTMLImageElement) {
-      media.src = getMediaThumbnailUrl(item.path);
-      media.alt = item.name;
-      media.draggable = false;
-      media.onerror = () => {
-        media.classList.add('marker-media-fallback');
-      };
-    } else {
-      media.classList.add('marker-video-fallback');
-      media.textContent = 'VIDEO';
-    }
+    media.src = getMediaThumbnailUrl(item.path);
+    media.alt = item.name;
+    media.draggable = false;
+    media.onerror = () => {
+      media.classList.add(item.mediaType === 'image' ? 'marker-media-fallback' : 'marker-video-fallback');
+    };
     bubble.appendChild(media);
 
     // 创建标签（GPS/XMP）
