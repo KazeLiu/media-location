@@ -4,8 +4,11 @@ export interface AppConfig {
   port: number;
   amapKey: string;
   amapSecurityCode: string;
+  mapProvider: 'amap' | 'mapbox';
+  mapboxToken: string;
   libraryRoots: string[];
   backupBeforeWrite: boolean;
+  largeWorkspace: boolean;
 }
 
 export interface BrowseEntry {
