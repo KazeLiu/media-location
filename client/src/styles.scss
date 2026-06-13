@@ -508,6 +508,15 @@ body {
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.45;
+
+  a {
+    color: var(--accent);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
 }
 
 .map-search-marker {
