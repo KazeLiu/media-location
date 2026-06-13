@@ -97,7 +97,7 @@ async function ensureMap(): Promise<void> {
 
     map = new mapboxgl.Map({
       container: mapEl.value,
-      style: 'mapbox://styles/mapbox/satellite-streets-v12',
+      style: 'mapbox://styles/mapbox/streets-v12',
       center: DEFAULT_CENTER,
       zoom: INITIAL_ZOOM,
       projection: 'mercator',
@@ -298,7 +298,7 @@ function applyMapStyle(): void {
     return;
   }
 
-  let style = 'mapbox://styles/mapbox/outdoors-v12';
+  let style = 'mapbox://styles/mapbox/streets-v12';
 
   if (mapModel.layerMode === 'satellite') {
     // 卫星图：根据路网开关选择样式
