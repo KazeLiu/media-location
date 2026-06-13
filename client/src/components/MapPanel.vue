@@ -98,6 +98,19 @@ async function ensureMap(): Promise<void> {
     return;
   }
 
+  // 检查是否有对应的 key
+  if (props.mapProvider === 'amap' && !props.amapKey) {
+    mapModel.hint = '需要高德 Key';
+    emit('error', '需要高德 Key');
+    return;
+  }
+
+  if (props.mapProvider === 'mapbox' && !props.mapboxAccessToken) {
+    mapModel.hint = '需要 Mapbox Token';
+    emit('error', '需要 Mapbox Token');
+    return;
+  }
+
   if (props.mapProvider === 'amap') {
     await ensureAmapMap();
   } else if (props.mapProvider === 'mapbox') {
@@ -106,11 +119,6 @@ async function ensureMap(): Promise<void> {
 }
 
 async function ensureAmapMap(): Promise<void> {
-  if (!props.amapKey) {
-    mapModel.hint = '需要高德 Key';
-    return;
-  }
-
   try {
     await loadAmap(props.amapKey, props.amapSecurityCode);
     const AMap = window.AMap;
@@ -165,11 +173,6 @@ async function ensureAmapMap(): Promise<void> {
 }
 
 async function ensureMapboxMap(): Promise<void> {
-  if (!props.mapboxAccessToken) {
-    mapModel.hint = '需要 Mapbox Token';
-    return;
-  }
-
   try {
     const mapboxgl = await import('mapbox-gl');
     await import('mapbox-gl/dist/mapbox-gl.css');
@@ -838,8 +841,27 @@ function setMapDragEnabled(enabled: boolean): void {
 }
 
 watch(
-  () => [props.amapKey, props.amapSecurityCode, props.items, props.selectedPath, mapModel.expandedPath],
-  async () => {
+  () => [props.mapProvider, props.amapKey, props.amapSecurityCode, props.mapboxAccessToken, props.items, props.selectedPath, mapModel.expandedPath],
+  async (newVal, oldVal) => {
+    // 检查地图引擎是否切换
+    if (oldVal && newVal[0] !== oldVal[0]) {
+      // 地图引擎切换了，需要销毁旧地图
+      if (map) {
+        try {
+          if (typeof map.destroy === 'function') {
+            map.destroy();
+          } else if (typeof map.remove === 'function') {
+            map.remove();
+          }
+        } catch (error) {
+          console.error('销毁地图失败:', error);
+        }
+        map = null;
+        markers = [];
+        searchMarker = null;
+      }
+    }
+
     await ensureMap();
     renderMarkers();
   },
