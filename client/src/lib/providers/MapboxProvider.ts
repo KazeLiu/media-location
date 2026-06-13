@@ -95,6 +95,13 @@ export class MapboxProvider extends MapProvider {
         config.onMapClick?.(event.lngLat.lng, event.lngLat.lat);
       });
 
+      // 鼠标移动事件
+      this.map.on('mousemove', (event: any) => {
+        if (this.config?.onMouseMove) {
+          this.config.onMouseMove(event.lngLat.lng, event.lngLat.lat);
+        }
+      });
+
       // 绑定拖放事件
       const container = this.map.getContainer();
       container.addEventListener('dragover', this.handleDragOver);
