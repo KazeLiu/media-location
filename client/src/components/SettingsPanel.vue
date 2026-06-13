@@ -16,16 +16,20 @@ const emit = defineEmits<{
 // Settings block: keeps only runtime options that belong in the floating settings sheet.
 const settingsModel = reactive({
   port: props.config.port,
+  mapProvider: props.config.mapProvider,
   amapKey: props.config.amapKey,
   amapSecurityCode: props.config.amapSecurityCode,
+  mapboxAccessToken: props.config.mapboxAccessToken,
 });
 
 watch(
   () => props.config,
   (config) => {
     settingsModel.port = config.port;
+    settingsModel.mapProvider = config.mapProvider;
     settingsModel.amapKey = config.amapKey;
     settingsModel.amapSecurityCode = config.amapSecurityCode;
+    settingsModel.mapboxAccessToken = config.mapboxAccessToken;
   },
   { deep: true, immediate: true },
 );
@@ -34,8 +38,10 @@ function submit(): void {
   emit('save', {
     ...props.config,
     port: settingsModel.port,
+    mapProvider: settingsModel.mapProvider,
     amapKey: settingsModel.amapKey.trim(),
     amapSecurityCode: settingsModel.amapSecurityCode.trim(),
+    mapboxAccessToken: settingsModel.mapboxAccessToken.trim(),
     backupBeforeWrite: false,
   });
 }
@@ -58,13 +64,28 @@ function submit(): void {
           <el-input-number v-model="settingsModel.port" :min="1" :max="65535" controls-position="right" />
         </el-form-item>
 
-        <el-form-item label="高德 Web(JS API) Key">
-          <el-input v-model="settingsModel.amapKey" clearable />
+        <el-form-item label="地图引擎">
+          <el-select v-model="settingsModel.mapProvider" placeholder="选择地图引擎">
+            <el-option label="高德地图" value="amap" />
+            <el-option label="Mapbox" value="mapbox" />
+          </el-select>
         </el-form-item>
 
-        <el-form-item label="高德安全密钥">
-          <el-input v-model="settingsModel.amapSecurityCode" clearable show-password />
-        </el-form-item>
+        <template v-if="settingsModel.mapProvider === 'amap'">
+          <el-form-item label="高德 Web(JS API) Key">
+            <el-input v-model="settingsModel.amapKey" clearable />
+          </el-form-item>
+
+          <el-form-item label="高德安全密钥">
+            <el-input v-model="settingsModel.amapSecurityCode" clearable show-password />
+          </el-form-item>
+        </template>
+
+        <template v-if="settingsModel.mapProvider === 'mapbox'">
+          <el-form-item label="Mapbox Access Token">
+            <el-input v-model="settingsModel.mapboxAccessToken" clearable show-password />
+          </el-form-item>
+        </template>
       </el-form>
 
       <section class="usage-guide" aria-labelledby="usage-guide-title">

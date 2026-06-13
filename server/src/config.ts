@@ -6,8 +6,10 @@ const DEFAULT_CONFIG: AppConfig = {
   appName: 'Media Location',
   appVersion: '0.4.7',
   port: 6755,
+  mapProvider: 'amap',
   amapKey: '',
   amapSecurityCode: '',
+  mapboxAccessToken: '',
   libraryRoots: [],
   backupBeforeWrite: false,
   loadVideoContent: false,
@@ -54,12 +56,14 @@ function normalizeConfig(input: Partial<AppConfig>): AppConfig {
     appName: DEFAULT_CONFIG.appName,
     appVersion: DEFAULT_CONFIG.appVersion,
     port: Number.isFinite(port) && port > 0 ? port : DEFAULT_CONFIG.port,
+    mapProvider: (input.mapProvider === 'mapbox' ? 'mapbox' : 'amap'),
     amapKey: String(input.amapKey || '').trim(),
     amapSecurityCode: String(input.amapSecurityCode || '').trim(),
+    mapboxAccessToken: String(input.mapboxAccessToken || '').trim(),
     libraryRoots,
     // 当前版本不暴露 XMP 写入前备份入口，统一关闭避免隐藏配置生效。
     backupBeforeWrite: false,
-    // 历史兼容字段：工作台不再内嵌加载或播放视频，统一关闭。
+    // 历史兼容字段:工作台不再内嵌加载或播放视频，统一关闭。
     loadVideoContent: false,
   };
 }

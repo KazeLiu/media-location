@@ -1,9 +1,13 @@
+export type MapProvider = 'amap' | 'mapbox';
+
 export interface AppConfig {
   appName: string;
   appVersion: string;
   port: number;
+  mapProvider: MapProvider;
   amapKey: string;
   amapSecurityCode: string;
+  mapboxAccessToken: string;
   libraryRoots: string[];
   backupBeforeWrite: boolean;
   loadVideoContent: boolean;

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Search } from '@element-plus/icons-vue';
-import type { MediaItem } from '@shared/contracts';
+import type { MediaItem, MapProvider } from '@shared/contracts';
 import {
   formatGcj02Wgs84CoordinateText,
   gcj02ToWgs84,
@@ -30,13 +30,16 @@ type SearchSuggestion = AmapSearchSuggestion;
 
 const props = withDefaults(
   defineProps<{
+    mapProvider: MapProvider;
     amapKey: string;
     amapSecurityCode?: string;
+    mapboxAccessToken?: string;
     items: MediaItem[];
     selectedPath: string;
   }>(),
   {
     amapSecurityCode: '',
+    mapboxAccessToken: '',
   },
 );
 
@@ -91,10 +94,20 @@ const mouseCoordText = computed(() => {
 });
 
 async function ensureMap(): Promise<void> {
-  if (!props.amapKey || !mapEl.value || map) {
-    if (!props.amapKey) {
-      mapModel.hint = '需要高德 Key';
-    }
+  if (!mapEl.value || map) {
+    return;
+  }
+
+  if (props.mapProvider === 'amap') {
+    await ensureAmapMap();
+  } else if (props.mapProvider === 'mapbox') {
+    await ensureMapboxMap();
+  }
+}
+
+async function ensureAmapMap(): Promise<void> {
+  if (!props.amapKey) {
+    mapModel.hint = '需要高德 Key';
     return;
   }
 
@@ -146,6 +159,58 @@ async function ensureMap(): Promise<void> {
     renderMarkers();
   } catch (error) {
     const message = error instanceof Error ? error.message : '高德地图加载失败';
+    mapModel.hint = message;
+    emit('error', message);
+  }
+}
+
+async function ensureMapboxMap(): Promise<void> {
+  if (!props.mapboxAccessToken) {
+    mapModel.hint = '需要 Mapbox Token';
+    return;
+  }
+
+  try {
+    const mapboxgl = await import('mapbox-gl');
+    await import('mapbox-gl/dist/mapbox-gl.css');
+
+    (mapboxgl.default as any).accessToken = props.mapboxAccessToken;
+
+    map = new (mapboxgl.default as any).Map({
+      container: mapEl.value!,
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center: [DEFAULT_CENTER[0], DEFAULT_CENTER[1]],
+      zoom: INITIAL_ZOOM,
+    });
+
+    map.on('load', () => {
+      mapModel.hint = '已连接';
+      emit('ready');
+      renderMarkers();
+    });
+
+    map.on('mousemove', (event: any) => {
+      mapModel.mouseCoord = {
+        lng: event.lngLat.lng,
+        lat: event.lngLat.lat,
+      };
+    });
+
+    map.on('click', (event: any) => {
+      if (mapModel.expandedPath) {
+        mapModel.expandedPath = '';
+        renderMarkers();
+      }
+
+      clearSearchMarker();
+      void copyLngLat(event.lngLat.lng, event.lngLat.lat);
+    });
+
+    const container = map.getContainer();
+    container.addEventListener('dragover', handleDragOver);
+    container.addEventListener('drop', handleDrop);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Mapbox 地图加载失败';
     mapModel.hint = message;
     emit('error', message);
   }

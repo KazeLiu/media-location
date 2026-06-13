@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Setting } from '@element-plus/icons-vue';
-import type { AppConfig, BrowseResponse, MediaItem } from '@shared/contracts';
+import type { AppConfig, BrowseResponse, MediaItem, MapProvider } from '@shared/contracts';
 import { browseDirectory, getConfig, saveConfig, setMediaGps } from './api';
 import DirectoryBrowser from './components/DirectoryBrowser.vue';
 import FolderPickerDialog from './components/FolderPickerDialog.vue';
@@ -26,8 +26,10 @@ const settingsModel = reactive({
     appName: 'Media Location',
     appVersion: '0.1.0',
     port: 6755,
+    mapProvider: 'amap' as MapProvider,
     amapKey: '',
     amapSecurityCode: '',
+    mapboxAccessToken: '',
     libraryRoots: [] as string[],
     backupBeforeWrite: false,
     loadVideoContent: false,
@@ -81,7 +83,8 @@ async function loadInitial(): Promise<void> {
   try {
     const config = await getConfig();
     applyConfig(config);
-    layoutModel.settingsOpen = !config.amapKey;
+    const hasMapConfig = config.amapKey || config.mapboxAccessToken;
+    layoutModel.settingsOpen = !hasMapConfig;
     await openPreferredRoot();
   } catch (error) {
     const message = error instanceof Error ? error.message : '加载失败';
@@ -93,7 +96,8 @@ async function loadInitial(): Promise<void> {
 }
 
 function handleMapReady(): void {
-  if (settingsModel.config.amapKey) {
+  const hasMapConfig = settingsModel.config.amapKey || settingsModel.config.mapboxAccessToken;
+  if (hasMapConfig) {
     layoutModel.settingsOpen = false;
   }
 }
@@ -107,8 +111,10 @@ function applyConfig(config: AppConfig): void {
   settingsModel.config.appName = config.appName;
   settingsModel.config.appVersion = config.appVersion;
   settingsModel.config.port = config.port;
+  settingsModel.config.mapProvider = config.mapProvider;
   settingsModel.config.amapKey = config.amapKey;
   settingsModel.config.amapSecurityCode = config.amapSecurityCode;
+  settingsModel.config.mapboxAccessToken = config.mapboxAccessToken;
   settingsModel.config.libraryRoots = config.libraryRoots;
   settingsModel.config.backupBeforeWrite = config.backupBeforeWrite;
   settingsModel.config.loadVideoContent = config.loadVideoContent;
@@ -337,7 +343,8 @@ async function saveSettings(config: AppConfig): Promise<void> {
     });
     applyConfig(saved);
     settingsModel.message = '已保存设置';
-    layoutModel.settingsOpen = !saved.amapKey;
+    const hasMapConfig = saved.amapKey || saved.mapboxAccessToken;
+    layoutModel.settingsOpen = !hasMapConfig;
     ElMessage.success('设置已保存');
   } catch (error) {
     const message = error instanceof Error ? error.message : '保存失败';
@@ -455,8 +462,10 @@ onBeforeUnmount(clearMediaFilterTimer);
   <div class="app-shell">
     <MapPanel
       class="map-layer"
+      :map-provider="settingsModel.config.mapProvider"
       :amap-key="settingsModel.config.amapKey"
       :amap-security-code="settingsModel.config.amapSecurityCode"
+      :mapbox-access-token="settingsModel.config.mapboxAccessToken"
       :items="visibleMedia"
       :selected-path="selectionModel.selectedPath"
       @select="handleSelectItem"
