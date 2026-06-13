@@ -174,24 +174,31 @@ async function ensureAmapMap(): Promise<void> {
 
 async function ensureMapboxMap(): Promise<void> {
   try {
-    const mapboxgl = await import('mapbox-gl');
+    // 动态导入 Mapbox GL JS
+    const mapboxgl = (await import('mapbox-gl')).default;
+
+    // 导入 CSS
     await import('mapbox-gl/dist/mapbox-gl.css');
 
-    (mapboxgl.default as any).accessToken = props.mapboxAccessToken;
+    // 设置 Access Token
+    (mapboxgl as any).accessToken = props.mapboxAccessToken;
 
-    map = new (mapboxgl.default as any).Map({
+    // 创建地图实例
+    map = new (mapboxgl as any).Map({
       container: mapEl.value!,
       style: 'mapbox://styles/mapbox/streets-v12',
       center: [DEFAULT_CENTER[0], DEFAULT_CENTER[1]],
       zoom: INITIAL_ZOOM,
     });
 
+    // 监听地图加载完成
     map.on('load', () => {
       mapModel.hint = '已连接';
       emit('ready');
       renderMarkers();
     });
 
+    // 监听鼠标移动
     map.on('mousemove', (event: any) => {
       mapModel.mouseCoord = {
         lng: event.lngLat.lng,
@@ -199,6 +206,7 @@ async function ensureMapboxMap(): Promise<void> {
       };
     });
 
+    // 监听地图点击
     map.on('click', (event: any) => {
       if (mapModel.expandedPath) {
         mapModel.expandedPath = '';
@@ -209,6 +217,7 @@ async function ensureMapboxMap(): Promise<void> {
       void copyLngLat(event.lngLat.lng, event.lngLat.lat);
     });
 
+    // 添加拖拽监听
     const container = map.getContainer();
     container.addEventListener('dragover', handleDragOver);
     container.addEventListener('drop', handleDrop);
@@ -216,6 +225,7 @@ async function ensureMapboxMap(): Promise<void> {
     const message = error instanceof Error ? error.message : 'Mapbox 地图加载失败';
     mapModel.hint = message;
     emit('error', message);
+    console.error('Mapbox 初始化错误:', error);
   }
 }
 
