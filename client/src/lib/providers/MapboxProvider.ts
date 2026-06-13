@@ -35,6 +35,7 @@ export class MapboxProvider extends MapProvider {
   private suppressMarkerClickUntil = 0;
   private expandedMarkerId = '';
   private currentSelectedId = '';
+  private currentItems: MediaItem[] = [];
 
   constructor(private readonly accessToken: string) {
     super();
@@ -87,7 +88,7 @@ export class MapboxProvider extends MapProvider {
       this.map.on('click', (event: any) => {
         if (this.expandedMarkerId) {
           this.expandedMarkerId = '';
-          this.renderMarkers([], this.currentSelectedId);
+          this.renderMarkers(this.currentItems, this.currentSelectedId);
         }
 
         this.clearSearchMarker();
@@ -161,7 +162,7 @@ export class MapboxProvider extends MapProvider {
 
     // 等待样式加载完成后重新渲染标记
     this.map.once('style.load', () => {
-      this.renderMarkers([], this.currentSelectedId);
+      this.renderMarkers(this.currentItems, this.currentSelectedId);
     });
   }
 
@@ -183,6 +184,7 @@ export class MapboxProvider extends MapProvider {
     }
 
     this.currentSelectedId = selectedId;
+    this.currentItems = items;
 
     // 清除旧标记
     this.clearMarkers();
@@ -372,7 +374,7 @@ export class MapboxProvider extends MapProvider {
       this.clearSearchMarker();
       this.config?.onMarkerClick?.(item);
       this.expandedMarkerId = this.expandedMarkerId === item.id ? '' : item.id;
-      this.renderMarkers([], this.currentSelectedId);
+      this.renderMarkers(this.currentItems, this.currentSelectedId);
     });
 
     // 创建标记气泡
