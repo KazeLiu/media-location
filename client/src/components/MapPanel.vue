@@ -11,7 +11,7 @@ import {
   type CoordinateSystem,
 } from '@shared/gps';
 import type { MapProvider } from '@/lib/mapProvider';
-import { AmapProvider } from '@/lib/providers';
+import { AmapProvider, MapboxProvider } from '@/lib/providers';
 
 const SEARCH_RESULT_ZOOM = 17;
 type MapLayerMode = 'standard' | 'satellite';
@@ -78,9 +78,13 @@ async function initMap(): Promise<void> {
         return;
       }
       provider = new AmapProvider(props.amapKey, props.amapSecurityCode);
-    } else {
-      // TODO: Mapbox Provider
-      throw new Error('Mapbox 地图暂未实现');
+    } else if (props.mapProvider === 'mapbox') {
+      if (!props.mapboxToken) {
+        mapModel.hint = '需要 Mapbox Token';
+        emit('error', '需要 Mapbox Token');
+        return;
+      }
+      provider = new MapboxProvider(props.mapboxToken);
     }
 
     // 初始化地图
