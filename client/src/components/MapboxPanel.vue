@@ -20,6 +20,9 @@ import {
   shouldShowMapVideoPlayButton,
   shouldShowMapImagePreviewButton,
 } from '@/lib/mapMarkerMedia';
+// @ts-ignore - Mapbox Draw 类型定义可能不完整
+import MapboxDraw from '@mapbox/mapbox-gl-draw';
+import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 
 const INITIAL_ZOOM = 11;
 const SEARCH_RESULT_ZOOM = 17;
@@ -57,18 +60,177 @@ const mapEl = ref<HTMLDivElement | null>(null);
 let map: mapboxgl.Map | null = null;
 let markers: mapboxgl.Marker[] = [];
 let searchMarker: mapboxgl.Marker | null = null;
-let geofenceSourcesIds: string[] = [];
+let draw: any = null;
+let geofencePolygonIds: Map<string, string> = new Map();
 
-// 围栏占位函数 - 后续可完善为完整的 Mapbox Draw 实现
 function renderGeofences(): void {
+  if (!map || !draw) return;
+
+  // 清除现有围栏
+  geofencePolygonIds.forEach((drawId) => {
+    try {
+      draw.delete(drawId);
+    } catch (e) {
+      // 忽略删除错误
+    }
+  });
+  geofencePolygonIds.clear();
+
+  // 渲染所有围栏
+  for (const geofence of props.geofences) {
+    if (geofence.coordinates.length < 3) continue;
+
+    const coordinates = geofence.coordinates.map(coord => [coord.longitude, coord.latitude]);
+    coordinates.push([geofence.coordinates[0].longitude, geofence.coordinates[0].latitude]); // 闭合多边形
+
+    const polygon = {
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [coordinates],
+      },
+      properties: {
+        geofenceId: geofence.id,
+      },
+    };
+
+    const featureIds = draw.add(polygon);
+    if (featureIds && featureIds.length > 0) {
+      geofencePolygonIds.set(geofence.id, featureIds[0]);
+    }
+  }
+
+  // 设置多边形样式（通过修改 draw 的内部样式）
+  updateGeofenceStyles();
+}
+
+function updateGeofenceStyles(): void {
   if (!map) return;
-  // TODO: 使用 @mapbox/mapbox-gl-draw 实现完整的围栏绘制编辑功能
-  console.log('Mapbox 围栏渲染（占位实现）', props.geofences);
+
+  const geofenceColorMap: Record<string, string> = {};
+  for (const geofence of props.geofences) {
+    geofenceColorMap[geofence.id] = geofence.color;
+  }
+
+  // 通过 map.setPaintProperty 修改样式
+  try {
+    const features = draw.getAll();
+    features.features.forEach((feature: any) => {
+      const geofenceId = feature.properties?.geofenceId;
+      if (geofenceId && geofenceColorMap[geofenceId]) {
+        // Mapbox Draw 使用内置图层，需要通过 CSS 或修改源码来自定义颜色
+        // 这里我们使用一个简化方案：通过 setFeatureProperty
+        draw.setFeatureProperty(feature.id, 'color', geofenceColorMap[geofenceId]);
+      }
+    });
+  } catch (e) {
+    // 样式更新失败不影响功能
+  }
+}
+
+function startDrawingGeofence(geofenceId: string): void {
+  if (!draw) return;
+
+  draw.changeMode('draw_polygon');
+
+  ElMessage.info('在地图上点击绘制围栏，双击完成');
+}
+
+function startEditingGeofence(geofenceId: string): void {
+  if (!draw) return;
+
+  const drawId = geofencePolygonIds.get(geofenceId);
+  if (!drawId) return;
+
+  draw.changeMode('direct_select', { featureId: drawId });
+
+  ElMessage.info('拖动顶点编辑围栏，点击空白处完成');
+}
+
+function stopDrawingOrEditing(): void {
+  if (!draw) return;
+
+  draw.changeMode('simple_select');
+}
+
+function handleDrawCreate(event: any): void {
+  const feature = event.features[0];
+  if (!feature || feature.geometry.type !== 'Polygon') return;
+
+  const coordinates = feature.geometry.coordinates[0].map((coord: number[]) => ({
+    longitude: coord[0],
+    latitude: coord[1],
+  }));
+  coordinates.pop(); // 移除闭合点
+
+  if (coordinates.length < 3) {
+    ElMessage.error('多边形至少需要3个顶点');
+    draw.delete(feature.id);
+    return;
+  }
+
+  emit('geofenceDrawn', props.editingGeofenceId, coordinates);
+  draw.delete(feature.id);
+  stopDrawingOrEditing();
+}
+
+function handleDrawUpdate(event: any): void {
+  const feature = event.features[0];
+  if (!feature || feature.geometry.type !== 'Polygon') return;
+
+  const geofenceId = feature.properties?.geofenceId;
+  if (!geofenceId) return;
+
+  const coordinates = feature.geometry.coordinates[0].map((coord: number[]) => ({
+    longitude: coord[0],
+    latitude: coord[1],
+  }));
+  coordinates.pop(); // 移除闭合点
+
+  if (coordinates.length < 3) {
+    ElMessage.error('多边形至少需要3个顶点');
+    return;
+  }
+
+  emit('geofenceEdited', geofenceId, coordinates);
+  stopDrawingOrEditing();
+}
+
+function fitGeofenceBounds(geofence: Geofence): void {
+  if (!map || geofence.coordinates.length === 0) return;
+
+  const bounds = new mapboxgl.LngLatBounds();
+  geofence.coordinates.forEach(coord => {
+    bounds.extend([coord.longitude, coord.latitude]);
+  });
+
+  map.fitBounds(bounds, { padding: 50 });
 }
 
 watch(() => props.geofences, () => {
   renderGeofences();
 }, { deep: true });
+
+watch(() => [props.editingGeofenceId, props.drawingMode] as const, ([id, drawing]) => {
+  if (!id) {
+    stopDrawingOrEditing();
+    return;
+  }
+
+  const geofence = props.geofences.find(g => g.id === id);
+  if (!geofence) return;
+
+  if (drawing) {
+    if (geofence.coordinates.length === 0) {
+      startDrawingGeofence(id);
+    } else {
+      startEditingGeofence(id);
+    }
+  } else {
+    stopDrawingOrEditing();
+    fitGeofenceBounds(geofence);
+  }
+});
 let markerDragState: {
   item: MediaItem;
   marker: mapboxgl.Marker;
@@ -128,6 +290,72 @@ async function ensureMap(): Promise<void> {
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.addControl(new mapboxgl.ScaleControl(), 'bottom-left');
 
+    // 初始化 MapboxDraw
+    draw = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: {},
+      styles: [
+        // 自定义样式以支持不同颜色
+        {
+          id: 'gl-draw-polygon-fill-inactive',
+          type: 'fill',
+          filter: ['all', ['==', 'active', 'false'], ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
+          paint: {
+            'fill-color': ['case', ['has', 'user_color'], ['get', 'user_color'], '#3bb2d0'],
+            'fill-outline-color': ['case', ['has', 'user_color'], ['get', 'user_color'], '#3bb2d0'],
+            'fill-opacity': 0.3,
+          },
+        },
+        {
+          id: 'gl-draw-polygon-stroke-inactive',
+          type: 'line',
+          filter: ['all', ['==', 'active', 'false'], ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': ['case', ['has', 'user_color'], ['get', 'user_color'], '#3bb2d0'],
+            'line-width': 2,
+          },
+        },
+        {
+          id: 'gl-draw-polygon-fill-active',
+          type: 'fill',
+          filter: ['all', ['==', 'active', 'true'], ['==', '$type', 'Polygon']],
+          paint: { 'fill-color': '#fbb03b', 'fill-outline-color': '#fbb03b', 'fill-opacity': 0.3 },
+        },
+        {
+          id: 'gl-draw-polygon-stroke-active',
+          type: 'line',
+          filter: ['all', ['==', 'active', 'true'], ['==', '$type', 'Polygon']],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': '#fbb03b', 'line-dasharray': [0.2, 2], 'line-width': 2 },
+        },
+        {
+          id: 'gl-draw-polygon-midpoint',
+          type: 'circle',
+          filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'midpoint']],
+          paint: { 'circle-radius': 3, 'circle-color': '#fbb03b' },
+        },
+        {
+          id: 'gl-draw-polygon-vertex-inactive',
+          type: 'circle',
+          filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point'], ['!=', 'mode', 'static']],
+          paint: { 'circle-radius': 5, 'circle-color': '#fff' },
+        },
+        {
+          id: 'gl-draw-polygon-vertex-stroke-inactive',
+          type: 'circle',
+          filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point'], ['!=', 'mode', 'static']],
+          paint: { 'circle-radius': 7, 'circle-color': '#fbb03b' },
+        },
+      ],
+    });
+
+    map.addControl(draw as any);
+
+    // 监听绘制事件
+    map.on('draw.create', handleDrawCreate);
+    map.on('draw.update', handleDrawUpdate);
+
     map.on('mousemove', (event) => {
       mapModel.mouseCoord = {
         lng: event.lngLat.lng,
@@ -152,12 +380,14 @@ async function ensureMap(): Promise<void> {
     mapModel.hint = '已连接';
     emit('ready');
 
-    // 等待地图完全加载后再渲染标记点
+    // 等待地图完全加载后再渲染标记点和围栏
     if (map.loaded()) {
       renderMarkers();
+      renderGeofences();
     } else {
       map.once('load', () => {
         renderMarkers();
+        renderGeofences();
       });
     }
   } catch (error) {
