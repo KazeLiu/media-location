@@ -114,7 +114,13 @@ async function ensureMap(): Promise<void> {
   try {
     await loadAmap(props.amapKey, props.amapSecurityCode);
     const AMap = window.AMap;
-    await loadAmapPlugins(['AMap.ToolBar', 'AMap.Scale', 'AMap.AutoComplete', 'AMap.PlaceSearch']);
+    await loadAmapPlugins([
+      'AMap.ToolBar',
+      'AMap.Scale',
+      'AMap.AutoComplete',
+      'AMap.PlaceSearch',
+      'AMap.PolygonEditor',
+    ]);
 
     map = new AMap.Map(mapEl.value, {
       zoom: INITIAL_ZOOM,
