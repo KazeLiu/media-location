@@ -93,15 +93,17 @@ function renderGeofences(): void {
         type: 'Polygon',
         coordinates: [coordinates],
       },
-      properties: {
-        geofenceId: geofence.id,
-        user_color: geofence.color, // 设置自定义颜色
-      },
+      properties: {},
     };
 
     const featureIds = draw.add(polygon);
     if (featureIds && featureIds.length > 0) {
-      geofencePolygonIds.set(geofence.id, featureIds[0]);
+      const featureId = featureIds[0];
+      geofencePolygonIds.set(geofence.id, featureId);
+
+      // 使用 setFeatureProperty 设置自定义属性
+      draw.setFeatureProperty(featureId, 'user_geofenceId', geofence.id);
+      draw.setFeatureProperty(featureId, 'user_color', geofence.color);
     }
   }
 }
@@ -193,9 +195,13 @@ function handleDrawCreate(event: any): void {
 
   // 新建围栏时，将临时绘制的多边形保存到围栏ID映射中
   if (props.editingGeofenceId) {
-    // 给 feature 添加围栏ID属性
-    feature.properties = feature.properties || {};
-    feature.properties.geofenceId = props.editingGeofenceId;
+    const geofence = props.geofences.find(g => g.id === props.editingGeofenceId);
+
+    // 使用 setFeatureProperty 设置自定义属性
+    draw.setFeatureProperty(feature.id, 'user_geofenceId', props.editingGeofenceId);
+    if (geofence) {
+      draw.setFeatureProperty(feature.id, 'user_color', geofence.color);
+    }
 
     // 保存映射关系
     geofencePolygonIds.set(props.editingGeofenceId, feature.id);
@@ -316,8 +322,8 @@ async function ensureMap(): Promise<void> {
           type: 'fill',
           filter: ['all', ['==', 'active', 'false'], ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
           paint: {
-            'fill-color': ['case', ['has', 'user_color'], ['get', 'user_color'], '#3bb2d0'],
-            'fill-outline-color': ['case', ['has', 'user_color'], ['get', 'user_color'], '#3bb2d0'],
+            'fill-color': ['coalesce', ['get', 'user_color'], '#3bb2d0'],
+            'fill-outline-color': ['coalesce', ['get', 'user_color'], '#3bb2d0'],
             'fill-opacity': 0.3,
           },
         },
@@ -327,7 +333,7 @@ async function ensureMap(): Promise<void> {
           filter: ['all', ['==', 'active', 'false'], ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
-            'line-color': ['case', ['has', 'user_color'], ['get', 'user_color'], '#3bb2d0'],
+            'line-color': ['coalesce', ['get', 'user_color'], '#3bb2d0'],
             'line-width': 2,
           },
         },
@@ -379,15 +385,15 @@ async function ensureMap(): Promise<void> {
     });
 
     map.on('click', (event) => {
-      // 检查是否点击了围栏
+      // 检查是否点击了围栏（非编辑模式）
       if (!props.drawingMode && map) {
         const features = map.queryRenderedFeatures(event.point, {
-          layers: ['gl-draw-polygon-fill-inactive.cold'],
+          layers: ['gl-draw-polygon-fill-inactive', 'gl-draw-polygon-stroke-inactive'],
         });
 
         if (features && features.length > 0) {
           const feature = features[0];
-          const geofenceId = feature.properties?.geofenceId;
+          const geofenceId = feature.properties?.user_geofenceId;
           if (geofenceId) {
             const geofence = props.geofences.find(g => g.id === geofenceId);
             if (geofence) {
