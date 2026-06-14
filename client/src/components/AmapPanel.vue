@@ -157,6 +157,7 @@ async function ensureMap(): Promise<void> {
     mapModel.hint = '已连接';
     emit('ready');
     renderMarkers();
+    renderGeofences();
   } catch (error) {
     const message = error instanceof Error ? error.message : '高德地图加载失败';
     mapModel.hint = message;
@@ -214,6 +215,107 @@ function fitGeofenceBounds(geofence: Geofence): void {
   });
 
   map.setFitView([geofencePolygons.get(geofence.id)]);
+}
+
+function startDrawingGeofence(geofenceId: string): void {
+  if (!map) return;
+
+  const AMap = (window as any).AMap;
+
+  if (!polygonEditor) {
+    polygonEditor = new AMap.PolygonEditor(map);
+
+    polygonEditor.on('end', (event: any) => {
+      const path = event.target.getPath();
+      if (path.length < 3) {
+        ElMessage.error('多边形至少需要3个顶点');
+        return;
+      }
+
+      const wgs84Coords = path.map((lngLat: any) => {
+        const wgs = gcj02ToWgs84(lngLat.lng, lngLat.lat);
+        return { longitude: wgs.lng, latitude: wgs.lat };
+      });
+
+      emit('geofenceDrawn', geofenceId, wgs84Coords);
+      stopDrawingOrEditing();
+    });
+  }
+
+  const polygon = new AMap.Polygon({
+    fillColor: props.geofences.find(g => g.id === geofenceId)?.color || '#FF5733',
+    fillOpacity: 0.3,
+    strokeColor: props.geofences.find(g => g.id === geofenceId)?.color || '#FF5733',
+    strokeWeight: 2,
+  });
+
+  currentEditingPolygon = polygon;
+  polygonEditor.setTarget(polygon);
+  polygonEditor.open();
+}
+
+function startEditingGeofence(geofenceId: string): void {
+  if (!map) return;
+
+  const geofence = props.geofences.find(g => g.id === geofenceId);
+  if (!geofence || geofence.coordinates.length < 3) return;
+
+  const AMap = (window as any).AMap;
+
+  const gcj02Path = geofence.coordinates.map(coord => {
+    const gcj = wgs84ToGcj02(coord.longitude, coord.latitude);
+    return new AMap.LngLat(gcj.lng, gcj.lat);
+  });
+
+  if (!polygonEditor) {
+    polygonEditor = new AMap.PolygonEditor(map);
+
+    polygonEditor.on('end', () => {
+      const path = polygonEditor.getTarget().getPath();
+      if (path.length < 3) {
+        ElMessage.error('多边形至少需要3个顶点');
+        return;
+      }
+
+      const wgs84Coords = path.map((lngLat: any) => {
+        const wgs = gcj02ToWgs84(lngLat.lng, lngLat.lat);
+        return { longitude: wgs.lng, latitude: wgs.lat };
+      });
+
+      emit('geofenceEdited', geofenceId, wgs84Coords);
+      stopDrawingOrEditing();
+    });
+  }
+
+  const existingPolygon = geofencePolygons.get(geofenceId);
+  if (existingPolygon) {
+    existingPolygon.setMap(null);
+  }
+
+  const polygon = new AMap.Polygon({
+    path: gcj02Path,
+    fillColor: geofence.color,
+    fillOpacity: 0.3,
+    strokeColor: geofence.color,
+    strokeWeight: 2,
+  });
+
+  currentEditingPolygon = polygon;
+  polygonEditor.setTarget(polygon);
+  polygonEditor.open();
+}
+
+function stopDrawingOrEditing(): void {
+  if (polygonEditor) {
+    polygonEditor.close();
+  }
+
+  if (currentEditingPolygon) {
+    currentEditingPolygon.setMap(null);
+    currentEditingPolygon = null;
+  }
+
+  renderGeofences();
 }
 
 function handleDragOver(event: DragEvent): void {
@@ -855,6 +957,31 @@ function scheduleRestoreMapDrag(): void {
 function setMapDragEnabled(enabled: boolean): void {
   map?.setStatus?.({ dragEnable: enabled });
 }
+
+watch(() => props.geofences, () => {
+  renderGeofences();
+}, { deep: true });
+
+watch(() => [props.editingGeofenceId, props.drawingMode] as const, ([id, drawing]) => {
+  if (!id) {
+    stopDrawingOrEditing();
+    return;
+  }
+
+  const geofence = props.geofences.find(g => g.id === id);
+  if (!geofence) return;
+
+  if (drawing) {
+    if (geofence.coordinates.length === 0) {
+      startDrawingGeofence(id);
+    } else {
+      startEditingGeofence(id);
+    }
+  } else {
+    stopDrawingOrEditing();
+    fitGeofenceBounds(geofence);
+  }
+});
 
 watch(
   () => [props.amapKey, props.amapSecurityCode, props.items, props.selectedPath, mapModel.expandedPath],
