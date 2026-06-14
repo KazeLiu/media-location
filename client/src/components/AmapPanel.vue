@@ -262,16 +262,21 @@ function startDrawingGeofence(geofenceId: string): void {
       return;
     }
 
-    const wgs84Coords = path.map((lngLat: any) => {
-      const wgs = gcj02ToWgs84(lngLat.lng, lngLat.lat);
-      return { longitude: wgs.lng, latitude: wgs.lat };
-    });
+    // 新建围栏时，保存临时多边形并切换到编辑模式
+    // 不自动保存，等待用户点击面板的确认按钮
+    currentEditingPolygon = polygon;
 
-    emit('geofenceDrawn', geofenceId, wgs84Coords);
+    // 创建编辑器并打开编辑模式
+    if (!polygonEditor) {
+      const AMap = (window as any).AMap;
+      polygonEditor = new AMap.PolygonEditor(map);
+    }
 
-    // 清理绘制的临时多边形
-    map?.remove(polygon);
-    mouseTool.close(true);
+    polygonEditor.setTarget(polygon);
+    polygonEditor.open();
+
+    // 关闭绘制工具
+    mouseTool.close(false);
   });
 }
 
@@ -308,22 +313,7 @@ function startEditingGeofence(geofenceId: string): void {
   polygonEditor.setTarget(polygon);
   polygonEditor.open();
 
-  // 监听编辑结束
-  polygonEditor.on('end', () => {
-    const path = polygon.getPath();
-    if (path.length < 3) {
-      ElMessage.error('多边形至少需要3个顶点');
-      return;
-    }
-
-    const wgs84Coords = path.map((lngLat: any) => {
-      const wgs = gcj02ToWgs84(lngLat.lng, lngLat.lat);
-      return { longitude: wgs.lng, latitude: wgs.lat };
-    });
-
-    emit('geofenceEdited', geofenceId, wgs84Coords);
-    stopDrawingOrEditing();
-  });
+  // 不再监听 end 事件，改为通过面板按钮手动保存
 }
 
 function stopDrawingOrEditing(): void {

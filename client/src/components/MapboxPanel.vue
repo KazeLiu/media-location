@@ -216,31 +216,24 @@ function handleDrawCreate(event: any): void {
     return;
   }
 
-  emit('geofenceDrawn', props.editingGeofenceId, coordinates);
-  draw.delete(feature.id);
-  stopDrawingOrEditing();
+  // 新建围栏时，将临时绘制的多边形保存到围栏ID映射中
+  if (props.editingGeofenceId) {
+    // 给 feature 添加围栏ID属性
+    feature.properties = feature.properties || {};
+    feature.properties.geofenceId = props.editingGeofenceId;
+
+    // 保存映射关系
+    geofencePolygonIds.set(props.editingGeofenceId, feature.id);
+
+    // 不自动保存，等待用户点击面板的确认按钮
+    // 切换到选择模式，允许继续编辑
+    draw.changeMode('simple_select', { featureIds: [feature.id] });
+  }
 }
 
 function handleDrawUpdate(event: any): void {
-  const feature = event.features[0];
-  if (!feature || feature.geometry.type !== 'Polygon') return;
-
-  const geofenceId = feature.properties?.geofenceId;
-  if (!geofenceId) return;
-
-  const coordinates = feature.geometry.coordinates[0].map((coord: number[]) => ({
-    longitude: coord[0],
-    latitude: coord[1],
-  }));
-  coordinates.pop(); // 移除闭合点
-
-  if (coordinates.length < 3) {
-    ElMessage.error('多边形至少需要3个顶点');
-    return;
-  }
-
-  emit('geofenceEdited', geofenceId, coordinates);
-  stopDrawingOrEditing();
+  // 不再自动保存，改为通过面板按钮手动保存
+  // 只在这里做基本的验证，不触发保存事件
 }
 
 function fitGeofenceBounds(geofence: Geofence): void {
