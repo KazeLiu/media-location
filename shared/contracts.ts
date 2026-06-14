@@ -85,3 +85,22 @@ export interface FolderPickerShortcut {
 export interface FolderPickerShortcuts {
   desktop: FolderPickerShortcut | null;
 }
+
+export interface GeofenceCoordinate {
+  longitude: number;
+  latitude: number;
+}
+
+export interface Geofence {
+  id: string;
+  name: string;
+  color: string;
+  coordinates: GeofenceCoordinate[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GeofenceConfig {
+  enabled: boolean;
+  geofences: Geofence[];
+}
