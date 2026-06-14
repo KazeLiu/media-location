@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Search } from '@element-plus/icons-vue';
-import type { MediaItem } from '@shared/contracts';
+import type { MediaItem, Geofence } from '@shared/contracts';
 import {
   formatGcj02Wgs84CoordinateText,
   gcj02ToWgs84,
@@ -35,9 +35,15 @@ const props = withDefaults(
     amapSecurityCode?: string;
     items: MediaItem[];
     selectedPath: string;
+    geofences: Geofence[];
+    editingGeofenceId: string;
+    drawingMode: boolean;
   }>(),
   {
     amapSecurityCode: '',
+    geofences: () => [],
+    editingGeofenceId: '',
+    drawingMode: false,
   },
 );
 
@@ -46,6 +52,8 @@ const emit = defineEmits<{
   place: [payload: { path: string; longitude: number; latitude: number }];
   ready: [];
   error: [message: string];
+  geofenceDrawn: [id: string, coordinates: Array<{ longitude: number; latitude: number }>];
+  geofenceEdited: [id: string, coordinates: Array<{ longitude: number; latitude: number }>];
 }>();
 
 const mapEl = ref<HTMLDivElement | null>(null);
@@ -68,6 +76,10 @@ let markerDragState: {
   tipOffsetY: number;
   moved: boolean;
 } | null = null;
+
+let geofencePolygons: Map<string, any> = new Map();
+let polygonEditor: any = null;
+let currentEditingPolygon: any = null;
 
 // Map block: owns AMap state, search text, raw AMap hover coordinate, and expanded marker path.
 const mapModel = reactive({
@@ -150,6 +162,58 @@ async function ensureMap(): Promise<void> {
     mapModel.hint = message;
     emit('error', message);
   }
+}
+
+function renderGeofences(): void {
+  if (!map) return;
+
+  clearGeofencePolygons();
+
+  for (const geofence of props.geofences) {
+    if (geofence.coordinates.length < 3) continue;
+
+    const gcj02Path = geofence.coordinates.map(coord => {
+      const gcj = wgs84ToGcj02(coord.longitude, coord.latitude);
+      return [gcj.lng, gcj.lat];
+    });
+
+    const polygon = new (window as any).AMap.Polygon({
+      path: gcj02Path,
+      fillColor: geofence.color,
+      fillOpacity: 0.3,
+      strokeColor: geofence.color,
+      strokeWeight: 2,
+      strokeOpacity: 0.8,
+      bubble: true,
+    });
+
+    polygon.setMap(map);
+    geofencePolygons.set(geofence.id, polygon);
+
+    polygon.on('click', () => {
+      if (!props.drawingMode && props.editingGeofenceId !== geofence.id) {
+        fitGeofenceBounds(geofence);
+      }
+    });
+  }
+}
+
+function clearGeofencePolygons(): void {
+  geofencePolygons.forEach(polygon => {
+    polygon.setMap(null);
+  });
+  geofencePolygons.clear();
+}
+
+function fitGeofenceBounds(geofence: Geofence): void {
+  if (!map || geofence.coordinates.length === 0) return;
+
+  const gcj02Bounds = geofence.coordinates.map(coord => {
+    const gcj = wgs84ToGcj02(coord.longitude, coord.latitude);
+    return [gcj.lng, gcj.lat];
+  });
+
+  map.setFitView([geofencePolygons.get(geofence.id)]);
 }
 
 function handleDragOver(event: DragEvent): void {
