@@ -83,6 +83,7 @@ let geofencePolygons: Map<string, any> = new Map();
 let mouseTool: any = null;
 let polygonEditor: any = null;
 let currentEditingPolygon: any = null;
+let isSavingEdit = false; // 防止重复保存的标志位
 
 // Map block: owns AMap state, search text, raw AMap hover coordinate, and expanded marker path.
 const mapModel = reactive({
@@ -152,18 +153,23 @@ async function ensureMap(): Promise<void> {
 
     map.on('click', (event: any) => {
       // 如果正在编辑围栏，点击空白处保存
-      if (props.drawingMode && props.editingGeofenceId && polygonEditor && currentEditingPolygon) {
+      if (props.drawingMode && props.editingGeofenceId && polygonEditor && currentEditingPolygon && !isSavingEdit) {
         const geofence = props.geofences.find(g => g.id === props.editingGeofenceId);
         if (geofence && geofence.coordinates.length > 0) {
           // 这是编辑模式，保存当前编辑
           const path = currentEditingPolygon.getPath();
           if (path.length >= 3) {
+            isSavingEdit = true; // 标记正在保存
             const wgs84Coords = path.map((lngLat: any) => {
               const wgs = gcj02ToWgs84(lngLat.lng, lngLat.lat);
               return { longitude: wgs.lng, latitude: wgs.lat };
             });
             emit('geofenceEdited', props.editingGeofenceId, wgs84Coords);
             stopDrawingOrEditing();
+            // 延迟重置标志位，等待 props 更新
+            setTimeout(() => {
+              isSavingEdit = false;
+            }, 100);
           }
           return;
         }

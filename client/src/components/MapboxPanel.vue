@@ -64,6 +64,7 @@ let markers: mapboxgl.Marker[] = [];
 let searchMarker: mapboxgl.Marker | null = null;
 let draw: any = null;
 let geofencePolygonIds: Map<string, string> = new Map();
+let isSavingEdit = false; // 防止重复保存的标志位
 
 function renderGeofences(): void {
   if (!map || !draw) return;
@@ -363,7 +364,7 @@ async function ensureMap(): Promise<void> {
 
     map.on('click', (event) => {
       // 如果正在编辑围栏，点击空白处保存
-      if (props.drawingMode && props.editingGeofenceId && draw) {
+      if (props.drawingMode && props.editingGeofenceId && draw && !isSavingEdit) {
         const geofence = props.geofences.find(g => g.id === props.editingGeofenceId);
         if (geofence && geofence.coordinates.length > 0) {
           // 这是编辑模式，获取当前编辑的围栏
@@ -378,8 +379,13 @@ async function ensureMap(): Promise<void> {
               coordinates.pop(); // 移除闭合点
 
               if (coordinates.length >= 3) {
+                isSavingEdit = true; // 标记正在保存
                 emit('geofenceEdited', props.editingGeofenceId, coordinates);
                 stopDrawingOrEditing();
+                // 延迟重置标志位，等待 props 更新
+                setTimeout(() => {
+                  isSavingEdit = false;
+                }, 100);
                 return;
               }
             }
