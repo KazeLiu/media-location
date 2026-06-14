@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive } from 'vue';
 import { ElMessage } from 'element-plus';
-import type { AppConfig, BrowseResponse, MediaItem, MapProvider, GpsWriteMode } from '@shared/contracts';
-import { browseDirectory, getConfig, saveConfig, setMediaGps } from './api';
+import type { AppConfig, BrowseResponse, MediaItem, MapProvider, GpsWriteMode, Geofence, GeofenceConfig } from '@shared/contracts';
+import { browseDirectory, getConfig, saveConfig, setMediaGps, getGeofenceConfig, saveGeofenceConfig } from './api';
+import { getRandomPointInPolygon } from './lib/geofenceUtils';
 import FolderPickerDialog from './components/FolderPickerDialog.vue';
 import MapPanel from './components/MapPanel.vue';
 import LeftPanel from './components/LeftPanel.vue';
@@ -70,6 +71,15 @@ const layoutModel = reactive({
   folderPickerOpen: false,
 });
 
+// Geofence block: owns围栏配置和编辑状态
+const geofenceModel = reactive({
+  busy: false,
+  enabled: false,
+  geofences: [] as Geofence[],
+  editingGeofenceId: '',
+  drawingMode: false,
+});
+
 function loadLeftPanelWidth(): number {
   try {
     const saved = localStorage.getItem('leftPanelWidth');
@@ -103,6 +113,8 @@ async function loadInitial(): Promise<void> {
   try {
     const config = await getConfig();
     applyConfig(config);
+    const geofenceConfig = await getGeofenceConfig();
+    applyGeofenceConfig(geofenceConfig);
     await openPreferredRoot();
   } catch (error) {
     const message = error instanceof Error ? error.message : '加载失败';
@@ -133,6 +145,25 @@ function applyConfig(config: AppConfig): void {
   settingsModel.config.libraryRoots = config.libraryRoots;
   settingsModel.config.backupBeforeWrite = config.backupBeforeWrite;
   settingsModel.config.loadVideoContent = config.loadVideoContent;
+}
+
+function applyGeofenceConfig(config: GeofenceConfig): void {
+  geofenceModel.enabled = config.enabled;
+  geofenceModel.geofences = config.geofences;
+}
+
+async function saveGeofences(config: GeofenceConfig): Promise<void> {
+  geofenceModel.busy = true;
+  try {
+    const saved = await saveGeofenceConfig(config);
+    applyGeofenceConfig(saved);
+    ElMessage.success('围栏配置已保存');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '保存失败';
+    ElMessage.error(message);
+  } finally {
+    geofenceModel.busy = false;
+  }
 }
 
 async function openPreferredRoot(): Promise<void> {
