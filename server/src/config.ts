@@ -14,6 +14,7 @@ const DEFAULT_CONFIG: AppConfig = {
   backupBeforeWrite: false,
   loadVideoContent: false,
   gpsWriteMode: 'xmp',
+  enableClickToCopy: false,
 };
 
 export function getConfigPath(): string {
@@ -67,5 +68,6 @@ function normalizeConfig(input: Partial<AppConfig>): AppConfig {
     // 历史兼容字段:工作台不再内嵌加载或播放视频，统一关闭。
     loadVideoContent: false,
     gpsWriteMode: (input.gpsWriteMode === 'exif' ? 'exif' : 'xmp'),
+    enableClickToCopy: Boolean(input.enableClickToCopy),
   };
 }

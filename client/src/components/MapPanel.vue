@@ -15,6 +15,7 @@ const props = withDefaults(
     geofences: Geofence[];
     editingGeofenceId: string;
     drawingMode: boolean;
+    enableClickToCopy: boolean;
   }>(),
   {
     amapSecurityCode: '',
@@ -22,6 +23,7 @@ const props = withDefaults(
     geofences: () => [],
     editingGeofenceId: '',
     drawingMode: false,
+    enableClickToCopy: false,
   },
 );
 
@@ -74,6 +76,7 @@ function handleGeofenceEdited(id: string, coords: GeofenceCoordinate[]): void {
     :geofences="geofences"
     :editing-geofence-id="editingGeofenceId"
     :drawing-mode="drawingMode"
+    :enable-click-to-copy="enableClickToCopy"
     @select="handleSelect"
     @place="handlePlace"
     @geofence-drawn="handleGeofenceDrawn"

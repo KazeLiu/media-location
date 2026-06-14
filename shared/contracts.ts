@@ -13,6 +13,7 @@ export interface AppConfig {
   backupBeforeWrite: boolean;
   loadVideoContent: boolean;
   gpsWriteMode: GpsWriteMode;
+  enableClickToCopy: boolean;
   _configPath?: string; // 内部属性，用于记录配置文件路径
 }
 

@@ -39,11 +39,13 @@ const props = withDefaults(
     geofences: Geofence[];
     editingGeofenceId: string;
     drawingMode: boolean;
+    enableClickToCopy: boolean;
   }>(),
   {
     geofences: () => [],
     editingGeofenceId: '',
     drawingMode: false,
+    enableClickToCopy: false,
   },
 );
 
@@ -370,7 +372,10 @@ async function ensureMap(): Promise<void> {
       }
 
       clearSearchMarker();
-      void copyLngLat(event.lngLat.lng, event.lngLat.lat);
+
+      if (props.enableClickToCopy) {
+        void copyLngLat(event.lngLat.lng, event.lngLat.lat);
+      }
     });
 
     const container = map.getContainer();

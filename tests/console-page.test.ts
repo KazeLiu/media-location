@@ -15,6 +15,7 @@ describe('local console page', () => {
       backupBeforeWrite: false,
       loadVideoContent: false,
       gpsWriteMode: 'xmp',
+      enableClickToCopy: false,
     });
 
     expect(html).toContain('href="/" target="_blank"');
@@ -35,6 +36,7 @@ describe('local console page', () => {
       backupBeforeWrite: false,
       loadVideoContent: false,
       gpsWriteMode: 'xmp',
+      enableClickToCopy: false,
     });
 
     expect(html).toContain('function closeConsolePage()');

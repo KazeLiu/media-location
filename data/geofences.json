@@ -1,4 +1,34 @@
 {
   "enabled": false,
-  "geofences": []
+  "geofences": [
+    {
+      "id": "ab9c8bb2-4840-494a-9cff-a7556fcf09c0",
+      "name": "123",
+      "color": "#FF5733",
+      "coordinates": [
+        {
+          "longitude": 116.37265206533812,
+          "latitude": 40.01599082894898
+        },
+        {
+          "longitude": 116.57702337405394,
+          "latitude": 39.95635609994507
+        },
+        {
+          "longitude": 116.51439269894408,
+          "latitude": 39.849829214935305
+        },
+        {
+          "longitude": 116.23827734780883,
+          "latitude": 39.84715411428834
+        },
+        {
+          "longitude": 116.19561274603271,
+          "latitude": 39.97876580389405
+        }
+      ],
+      "createdAt": "2026-06-14T12:54:13.792Z",
+      "updatedAt": "2026-06-14T12:54:17.569Z"
+    }
+  ]
 }

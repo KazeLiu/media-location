@@ -34,6 +34,7 @@ const settingsModel = reactive({
     backupBeforeWrite: false,
     loadVideoContent: false,
     gpsWriteMode: 'xmp' as GpsWriteMode,
+    enableClickToCopy: false,
   },
 });
 
@@ -686,6 +687,7 @@ onBeforeUnmount(clearMediaFilterTimer);
           :geofences="geofenceModel.geofences"
           :editing-geofence-id="geofenceModel.editingGeofenceId"
           :drawing-mode="geofenceModel.drawingMode"
+          :enable-click-to-copy="settingsModel.config.enableClickToCopy"
           @select="handleSelectItem"
           @place="placeMedia"
           @ready="handleMapReady"

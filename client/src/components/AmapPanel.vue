@@ -38,12 +38,14 @@ const props = withDefaults(
     geofences: Geofence[];
     editingGeofenceId: string;
     drawingMode: boolean;
+    enableClickToCopy: boolean;
   }>(),
   {
     amapSecurityCode: '',
     geofences: () => [],
     editingGeofenceId: '',
     drawingMode: false,
+    enableClickToCopy: false,
   },
 );
 
@@ -155,7 +157,10 @@ async function ensureMap(): Promise<void> {
       }
 
       clearSearchMarker();
-      void copyLngLat(event.lnglat.lng, event.lnglat.lat);
+
+      if (props.enableClickToCopy) {
+        void copyLngLat(event.lnglat.lng, event.lnglat.lat);
+      }
     });
 
     const container = map.getContainer();

@@ -20,6 +20,7 @@ const settingsModel = reactive({
   amapSecurityCode: props.config.amapSecurityCode,
   mapboxAccessToken: props.config.mapboxAccessToken,
   gpsWriteMode: props.config.gpsWriteMode,
+  enableClickToCopy: props.config.enableClickToCopy,
 });
 
 watch(
@@ -31,6 +32,7 @@ watch(
     settingsModel.amapSecurityCode = config.amapSecurityCode;
     settingsModel.mapboxAccessToken = config.mapboxAccessToken;
     settingsModel.gpsWriteMode = config.gpsWriteMode;
+    settingsModel.enableClickToCopy = config.enableClickToCopy;
   },
   { deep: true, immediate: true },
 );
@@ -44,6 +46,7 @@ function submit(): void {
     amapSecurityCode: settingsModel.amapSecurityCode.trim(),
     mapboxAccessToken: settingsModel.mapboxAccessToken.trim(),
     gpsWriteMode: settingsModel.gpsWriteMode,
+    enableClickToCopy: settingsModel.enableClickToCopy,
     backupBeforeWrite: false,
   });
 }
@@ -85,6 +88,11 @@ function submit(): void {
             <el-radio-button value="xmp">XMP 侧车文件（推荐）</el-radio-button>
             <el-radio-button value="exif">直接写入图片 EXIF</el-radio-button>
           </el-radio-group>
+        </el-form-item>
+
+        <el-form-item label="点击地图复制经纬度">
+          <el-switch v-model="settingsModel.enableClickToCopy" />
+          <span class="form-tip">开启后点击地图可复制经纬度到剪贴板</span>
         </el-form-item>
       </el-form>
     </el-scrollbar>
@@ -164,5 +172,11 @@ function submit(): void {
   .el-button {
     min-width: 120px;
   }
+}
+
+.form-tip {
+  margin-left: 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>
