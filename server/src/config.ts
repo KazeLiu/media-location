@@ -13,6 +13,7 @@ const DEFAULT_CONFIG: AppConfig = {
   libraryRoots: [],
   backupBeforeWrite: false,
   loadVideoContent: false,
+  gpsWriteMode: 'xmp',
 };
 
 export function getConfigPath(): string {
@@ -65,5 +66,6 @@ function normalizeConfig(input: Partial<AppConfig>): AppConfig {
     backupBeforeWrite: false,
     // 历史兼容字段:工作台不再内嵌加载或播放视频，统一关闭。
     loadVideoContent: false,
+    gpsWriteMode: (input.gpsWriteMode === 'exif' ? 'exif' : 'xmp'),
   };
 }

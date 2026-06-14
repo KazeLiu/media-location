@@ -9,6 +9,7 @@ import { isMediaFile, resolveXmpPathForWrite, scanMediaDirectoryPage } from './m
 import { readRecentLogs, writeOperationLog } from './operationLog';
 import { getCachedThumbnail, ThumbnailGenerationError } from './thumbnails';
 import { writeGpsToXmpFile } from './xmp';
+import { writeGpsToExif, checkExiftoolAvailable } from './exif';
 
 export interface ApiRouterOptions {
   shutdown?: () => void | Promise<void>;
@@ -309,20 +310,44 @@ export function createApiRouter(options: ApiRouterOptions = {}): express.Router 
         throw new Error('Invalid WGS-84 coordinate.');
       }
 
-      const xmpPath = await resolveXmpPathForWrite(mediaPath);
-      const writtenPath = await writeGpsToXmpFile(xmpPath, {
+      const gpsData = {
         latitude: wgsLat,
         longitude: wgsLng,
-      }, config.backupBeforeWrite);
+      };
+
+      let writtenPath: string;
+      let writeMode: string;
+
+      if (config.gpsWriteMode === 'exif') {
+        // 直接写入图片 EXIF
+        const ext = path.extname(mediaPath).toLowerCase();
+        if (ext === '.mp4' || ext === '.mov' || ext === '.avi' || ext === '.mkv') {
+          // 视频文件不支持直接写入 EXIF，降级到 XMP
+          const xmpPath = await resolveXmpPathForWrite(mediaPath);
+          writtenPath = await writeGpsToXmpFile(xmpPath, gpsData, config.backupBeforeWrite);
+          writeMode = 'xmp-fallback';
+        } else {
+          // 图片文件使用 exiftool 写入
+          writtenPath = await writeGpsToExif(mediaPath, gpsData, config.backupBeforeWrite);
+          writeMode = 'exif';
+        }
+      } else {
+        // 默认写入 XMP 侧车文件
+        const xmpPath = await resolveXmpPathForWrite(mediaPath);
+        writtenPath = await writeGpsToXmpFile(xmpPath, gpsData, config.backupBeforeWrite);
+        writeMode = 'xmp';
+      }
 
       await logSuccess('write:gps', mediaPath, startedAt, {
-        xmpPath: writtenPath,
+        writtenPath,
+        writeMode,
         latitude: wgsLat,
         longitude: wgsLng,
       });
       res.json({
         path: mediaPath,
-        xmpPath: writtenPath,
+        writtenPath,
+        writeMode,
         latitude: wgsLat,
         longitude: wgsLng,
       });

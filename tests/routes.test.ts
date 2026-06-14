@@ -331,7 +331,7 @@ describe('api routes', () => {
       const gps = parseGpsFromXmp(xmp);
 
       expect(response.status).toBe(200);
-      expect(body.xmpPath).toBe(panoSidecarPath);
+      expect(body.writtenPath).toBe(panoSidecarPath);
       expect(gps?.longitude).toBeCloseTo(116.397128, 6);
       expect(gps?.latitude).toBeCloseTo(39.916527, 6);
       await expect(readFile(exactPanoSidecarPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
@@ -400,7 +400,7 @@ describe('api routes', () => {
       const sourceGps = parseGpsFromXmp(sourceXmp);
 
       expect(response.status).toBe(200);
-      expect(body.xmpPath).toBe(exactSourceSidecarPath);
+      expect(body.writtenPath).toBe(exactSourceSidecarPath);
       expect(ownerGps?.longitude).toBeCloseTo(121.4737, 6);
       expect(ownerGps?.latitude).toBeCloseTo(31.2304, 6);
       expect(sourceGps?.longitude).toBeCloseTo(116.397128, 6);

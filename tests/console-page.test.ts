@@ -7,11 +7,14 @@ describe('local console page', () => {
       appName: 'Media Location',
       appVersion: '0.3.0',
       port: 6755,
+      mapProvider: 'amap',
       amapKey: '',
       amapSecurityCode: '',
+      mapboxAccessToken: '',
       libraryRoots: [],
       backupBeforeWrite: false,
       loadVideoContent: false,
+      gpsWriteMode: 'xmp',
     });
 
     expect(html).toContain('href="/" target="_blank"');
@@ -24,11 +27,14 @@ describe('local console page', () => {
       appName: 'Media Location',
       appVersion: '0.3.0',
       port: 6755,
+      mapProvider: 'amap',
       amapKey: '',
       amapSecurityCode: '',
+      mapboxAccessToken: '',
       libraryRoots: [],
       backupBeforeWrite: false,
       loadVideoContent: false,
+      gpsWriteMode: 'xmp',
     });
 
     expect(html).toContain('function closeConsolePage()');

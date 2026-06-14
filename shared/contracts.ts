@@ -1,4 +1,5 @@
 export type MapProvider = 'amap' | 'mapbox';
+export type GpsWriteMode = 'xmp' | 'exif';
 
 export interface AppConfig {
   appName: string;
@@ -11,6 +12,7 @@ export interface AppConfig {
   libraryRoots: string[];
   backupBeforeWrite: boolean;
   loadVideoContent: boolean;
+  gpsWriteMode: GpsWriteMode;
 }
 
 export interface BrowseEntry {

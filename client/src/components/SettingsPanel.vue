@@ -20,6 +20,7 @@ const settingsModel = reactive({
   amapKey: props.config.amapKey,
   amapSecurityCode: props.config.amapSecurityCode,
   mapboxAccessToken: props.config.mapboxAccessToken,
+  gpsWriteMode: props.config.gpsWriteMode,
 });
 
 watch(
@@ -30,6 +31,7 @@ watch(
     settingsModel.amapKey = config.amapKey;
     settingsModel.amapSecurityCode = config.amapSecurityCode;
     settingsModel.mapboxAccessToken = config.mapboxAccessToken;
+    settingsModel.gpsWriteMode = config.gpsWriteMode;
   },
   { deep: true, immediate: true },
 );
@@ -42,6 +44,7 @@ function submit(): void {
     amapKey: settingsModel.amapKey.trim(),
     amapSecurityCode: settingsModel.amapSecurityCode.trim(),
     mapboxAccessToken: settingsModel.mapboxAccessToken.trim(),
+    gpsWriteMode: settingsModel.gpsWriteMode,
     backupBeforeWrite: false,
   });
 }
@@ -86,6 +89,13 @@ function submit(): void {
             <el-input v-model="settingsModel.mapboxAccessToken" clearable show-password />
           </el-form-item>
         </template>
+
+        <el-form-item label="GPS 写入方式">
+          <el-select v-model="settingsModel.gpsWriteMode" placeholder="选择写入方式">
+            <el-option label="XMP 侧车文件（推荐）" value="xmp" />
+            <el-option label="直接写入图片 EXIF" value="exif" />
+          </el-select>
+        </el-form-item>
       </el-form>
 
       <section class="usage-guide" aria-labelledby="usage-guide-title">

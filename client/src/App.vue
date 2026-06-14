@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Setting } from '@element-plus/icons-vue';
-import type { AppConfig, BrowseResponse, MediaItem, MapProvider } from '@shared/contracts';
+import type { AppConfig, BrowseResponse, MediaItem, MapProvider, GpsWriteMode } from '@shared/contracts';
 import { browseDirectory, getConfig, saveConfig, setMediaGps } from './api';
 import DirectoryBrowser from './components/DirectoryBrowser.vue';
 import FolderPickerDialog from './components/FolderPickerDialog.vue';
@@ -33,6 +33,7 @@ const settingsModel = reactive({
     libraryRoots: [] as string[],
     backupBeforeWrite: false,
     loadVideoContent: false,
+    gpsWriteMode: 'xmp' as GpsWriteMode,
   },
 });
 

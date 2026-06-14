@@ -436,6 +436,7 @@ function renderMarkers(): void {
   markers.forEach((marker) => marker.remove());
   markers = [];
 
+  const currentMap = map; // 类型守卫：确保后续代码使用的是非 null 的 map
   props.items
     .filter((item) => item.hasGps && typeof item.longitude === 'number' && typeof item.latitude === 'number')
     .forEach((item) => {
@@ -450,7 +451,7 @@ function renderMarkers(): void {
         offset: [0, 0],
       })
         .setLngLat([item.longitude as number, item.latitude as number])
-        .addTo(map);
+        .addTo(currentMap);
 
       markers.push(marker);
     });

@@ -23,15 +23,29 @@ describe('video loading policy', () => {
   });
 
   it('uses generated thumbnail images instead of text placeholders for map videos', async () => {
-    const mapPanel = await readSource('client/src/components/MapPanel.vue');
-    const videoBranchStart = mapPanel.indexOf("const thumbnail = document.createElement");
-    const videoBranchEnd = mapPanel.indexOf('function createMarkerVideoPlayLink');
-    const videoBranch = mapPanel.slice(videoBranchStart, videoBranchEnd);
+    const amapPanel = await readSource('client/src/components/AmapPanel.vue');
+    const mapboxPanel = await readSource('client/src/components/MapboxPanel.vue');
 
-    expect(videoBranchStart).toBeGreaterThanOrEqual(0);
-    expect(videoBranchEnd).toBeGreaterThan(videoBranchStart);
-    expect(videoBranch).toContain("document.createElement('img')");
-    expect(videoBranch).toContain('.src = getMediaThumbnailUrl(item.path)');
-    expect(videoBranch).not.toContain("textContent = 'VIDEO'");
+    // 检查 AmapPanel
+    const amapVideoBranchStart = amapPanel.indexOf("const thumbnail = document.createElement");
+    const amapVideoBranchEnd = amapPanel.indexOf('function createMarkerVideoPlayLink');
+    const amapVideoBranch = amapPanel.slice(amapVideoBranchStart, amapVideoBranchEnd);
+
+    expect(amapVideoBranchStart).toBeGreaterThanOrEqual(0);
+    expect(amapVideoBranchEnd).toBeGreaterThan(amapVideoBranchStart);
+    expect(amapVideoBranch).toContain("document.createElement('img')");
+    expect(amapVideoBranch).toContain('.src = getMediaThumbnailUrl(item.path)');
+    expect(amapVideoBranch).not.toContain("textContent = 'VIDEO'");
+
+    // 检查 MapboxPanel
+    const mapboxVideoBranchStart = mapboxPanel.indexOf("const thumbnail = document.createElement");
+    const mapboxVideoBranchEnd = mapboxPanel.indexOf('function createMarkerVideoPlayLink');
+    const mapboxVideoBranch = mapboxPanel.slice(mapboxVideoBranchStart, mapboxVideoBranchEnd);
+
+    expect(mapboxVideoBranchStart).toBeGreaterThanOrEqual(0);
+    expect(mapboxVideoBranchEnd).toBeGreaterThan(mapboxVideoBranchStart);
+    expect(mapboxVideoBranch).toContain("document.createElement('img')");
+    expect(mapboxVideoBranch).toContain('.src = getMediaThumbnailUrl(item.path)');
+    expect(mapboxVideoBranch).not.toContain("textContent = 'VIDEO'");
   });
 });
