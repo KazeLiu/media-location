@@ -71,6 +71,14 @@ const collapseModel = reactive({
   directoryCollapsed: false,
   mediaCollapsed: false,
 });
+
+function handleDragStart(item: MediaItem, event: DragEvent): void {
+  emit('dragStart', item, event);
+}
+
+function handleUpdateGeofence(id: string, data: { name: string; color: string }): void {
+  emit('updateGeofence', id, data);
+}
 </script>
 
 <template>
@@ -106,7 +114,7 @@ const collapseModel = reactive({
             :loading-more="loadingMore"
             :collapsed="collapseModel.mediaCollapsed"
             @select="emit('selectMedia', $event)"
-            @drag-start="emit('dragStart', $event, $event)"
+            @drag-start="handleDragStart"
             @manual-place="emit('manualPlace', $event)"
             @toggle-pin="emit('togglePin', $event)"
             @pin-current-dir="emit('pinCurrentDir')"
@@ -136,7 +144,7 @@ const collapseModel = reactive({
           :busy="geofenceBusy"
           @save="emit('saveGeofences', $event)"
           @create="emit('createGeofence', $event)"
-          @update="emit('updateGeofence', $event[0], $event[1])"
+          @update="handleUpdateGeofence"
           @delete="emit('deleteGeofence', $event)"
           @view="emit('viewGeofence', $event)"
           @edit-area="emit('editGeofenceArea', $event)"

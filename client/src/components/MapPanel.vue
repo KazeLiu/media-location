@@ -53,6 +53,14 @@ function handleReady(): void {
 function handleError(message: string): void {
   emit('error', message);
 }
+
+function handleGeofenceDrawn(id: string, coords: GeofenceCoordinate[]): void {
+  emit('geofenceDrawn', id, coords);
+}
+
+function handleGeofenceEdited(id: string, coords: GeofenceCoordinate[]): void {
+  emit('geofenceEdited', id, coords);
+}
 </script>
 
 <template>
@@ -68,8 +76,8 @@ function handleError(message: string): void {
     :drawing-mode="drawingMode"
     @select="handleSelect"
     @place="handlePlace"
-    @geofence-drawn="$emit('geofenceDrawn', $event[0], $event[1])"
-    @geofence-edited="$emit('geofenceEdited', $event[0], $event[1])"
+    @geofence-drawn="handleGeofenceDrawn"
+    @geofence-edited="handleGeofenceEdited"
     @ready="handleReady"
     @error="handleError"
   />
