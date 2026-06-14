@@ -362,6 +362,31 @@ async function ensureMap(): Promise<void> {
     });
 
     map.on('click', (event) => {
+      // 如果正在编辑围栏，点击空白处保存
+      if (props.drawingMode && props.editingGeofenceId && draw) {
+        const geofence = props.geofences.find(g => g.id === props.editingGeofenceId);
+        if (geofence && geofence.coordinates.length > 0) {
+          // 这是编辑模式，获取当前编辑的围栏
+          const drawId = geofencePolygonIds.get(props.editingGeofenceId);
+          if (drawId) {
+            const feature = draw.get(drawId);
+            if (feature && feature.geometry.type === 'Polygon') {
+              const coordinates = feature.geometry.coordinates[0].map((coord: number[]) => ({
+                longitude: coord[0],
+                latitude: coord[1],
+              }));
+              coordinates.pop(); // 移除闭合点
+
+              if (coordinates.length >= 3) {
+                emit('geofenceEdited', props.editingGeofenceId, coordinates);
+                stopDrawingOrEditing();
+                return;
+              }
+            }
+          }
+        }
+      }
+
       if (mapModel.expandedPath) {
         mapModel.expandedPath = '';
         renderMarkers();
