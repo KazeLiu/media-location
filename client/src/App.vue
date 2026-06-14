@@ -251,6 +251,11 @@ function handleGeofenceEdited(id: string, coordinates: GeofenceCoordinate[]): vo
   });
 }
 
+function handleCancelGeofenceEdit(): void {
+  geofenceModel.editingGeofenceId = '';
+  geofenceModel.drawingMode = false;
+}
+
 async function handleDropToGeofence(geofence: Geofence, mediaPath: string): Promise<void> {
   try {
     if (geofence.coordinates.length < 3) {
@@ -689,6 +694,7 @@ onBeforeUnmount(clearMediaFilterTimer);
           @error="handleMapError"
           @geofence-drawn="handleGeofenceDrawn"
           @geofence-edited="handleGeofenceEdited"
+          @cancel-edit="handleCancelGeofenceEdit"
         >
           <GeofenceFloatingList
             v-if="geofenceModel.enabled"

@@ -13,6 +13,7 @@ import {
 import { getMediaFileUrl, getMediaThumbnailUrl, writeClientLog } from '@/api';
 import { loadMapbox, mapboxgl } from '@/lib/mapbox';
 import { searchMapboxAddress, type MapboxSearchSuggestion } from '@/lib/mapboxSearch';
+import GeofenceEditPanel from './GeofenceEditPanel.vue';
 import {
   getMapMarkerMediaMode,
   getNextExpandedPath,
@@ -56,6 +57,7 @@ const emit = defineEmits<{
   error: [message: string];
   geofenceDrawn: [id: string, coordinates: Array<{ longitude: number; latitude: number }>];
   geofenceEdited: [id: string, coordinates: Array<{ longitude: number; latitude: number }>];
+  cancelEdit: [];
 }>();
 
 const mapEl = ref<HTMLDivElement | null>(null);
@@ -64,7 +66,6 @@ let markers: mapboxgl.Marker[] = [];
 let searchMarker: mapboxgl.Marker | null = null;
 let draw: any = null;
 let geofencePolygonIds: Map<string, string> = new Map();
-let isSavingEdit = false; // 防止重复保存的标志位
 
 function renderGeofences(): void {
   if (!map || !draw) return;
@@ -140,9 +141,6 @@ function startDrawingGeofence(geofenceId: string): void {
 function startEditingGeofence(geofenceId: string): void {
   if (!draw) return;
 
-  // 重置保存标志位
-  isSavingEdit = false;
-
   const drawId = geofencePolygonIds.get(geofenceId);
   if (!drawId) return;
 
@@ -153,6 +151,53 @@ function stopDrawingOrEditing(): void {
   if (!draw) return;
 
   draw.changeMode('simple_select');
+}
+
+// 获取当前编辑的坐标
+function getCurrentEditingCoordinates() {
+  if (!draw || !props.editingGeofenceId) return [];
+
+  const drawId = geofencePolygonIds.get(props.editingGeofenceId);
+  if (!drawId) return [];
+
+  const feature = draw.get(drawId);
+  if (!feature || feature.geometry.type !== 'Polygon') return [];
+
+  const coordinates = feature.geometry.coordinates[0].map((coord: number[]) => ({
+    longitude: coord[0],
+    latitude: coord[1],
+  }));
+  coordinates.pop(); // 移除闭合点
+
+  return coordinates;
+}
+
+// 处理确认保存
+function handleConfirmEdit(): void {
+  if (!props.editingGeofenceId) return;
+
+  const coordinates = getCurrentEditingCoordinates();
+  if (coordinates.length < 3) {
+    ElMessage.error('多边形至少需要3个顶点');
+    return;
+  }
+
+  const geofence = props.geofences.find(g => g.id === props.editingGeofenceId);
+  if (geofence && geofence.coordinates.length === 0) {
+    // 新建模式
+    emit('geofenceDrawn', props.editingGeofenceId, coordinates);
+  } else {
+    // 编辑模式
+    emit('geofenceEdited', props.editingGeofenceId, coordinates);
+  }
+
+  stopDrawingOrEditing();
+}
+
+// 处理取消编辑
+function handleCancelEdit(): void {
+  stopDrawingOrEditing();
+  emit('cancelEdit');
 }
 
 function handleDrawCreate(event: any): void {
@@ -366,36 +411,6 @@ async function ensureMap(): Promise<void> {
     });
 
     map.on('click', (event) => {
-      // 如果正在编辑围栏，点击空白处保存
-      if (props.drawingMode && props.editingGeofenceId && draw && !isSavingEdit) {
-        const geofence = props.geofences.find(g => g.id === props.editingGeofenceId);
-        if (geofence && geofence.coordinates.length > 0) {
-          // 这是编辑模式，获取当前编辑的围栏
-          const drawId = geofencePolygonIds.get(props.editingGeofenceId);
-          if (drawId) {
-            const feature = draw.get(drawId);
-            if (feature && feature.geometry.type === 'Polygon') {
-              const coordinates = feature.geometry.coordinates[0].map((coord: number[]) => ({
-                longitude: coord[0],
-                latitude: coord[1],
-              }));
-              coordinates.pop(); // 移除闭合点
-
-              if (coordinates.length >= 3) {
-                isSavingEdit = true; // 标记正在保存
-                emit('geofenceEdited', props.editingGeofenceId, coordinates);
-                stopDrawingOrEditing();
-                // 延迟重置标志位，等待 props 更新
-                setTimeout(() => {
-                  isSavingEdit = false;
-                }, 500);
-                return;
-              }
-            }
-          }
-        }
-      }
-
       if (mapModel.expandedPath) {
         mapModel.expandedPath = '';
         renderMarkers();
@@ -1115,6 +1130,14 @@ onBeforeUnmount(() => {
         </el-button>
       </el-button-group>
     </div>
+
+    <GeofenceEditPanel
+      v-if="drawingMode && editingGeofenceId"
+      :geofence="geofences.find(g => g.id === editingGeofenceId)!"
+      :coordinates="getCurrentEditingCoordinates()"
+      @confirm="handleConfirmEdit"
+      @cancel="handleCancelEdit"
+    />
 
     <el-tag class="map-hint" effect="light">{{ mapModel.hint }}</el-tag>
   </section>
