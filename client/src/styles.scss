@@ -253,8 +253,10 @@ body {
 }
 
 .media-grid {
-  column-count: 2;
-  column-gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  align-items: start;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -263,11 +265,8 @@ body {
 }
 
 .media-card {
-  display: inline-block;
   width: 100%;
   max-width: 100%;
-  margin: 0 0 10px;
-  break-inside: avoid;
   overflow: hidden;
   border-radius: 8px;
   cursor: pointer;
@@ -283,7 +282,9 @@ body {
 }
 
 .preview-frame {
+  position: relative;
   width: 100%;
+  max-height: 280px;
   overflow: hidden;
   background: #edf2f6;
 
@@ -296,6 +297,32 @@ body {
   }
 }
 
+.image-preview-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: rgba(16, 33, 47, 0.74);
+  color: #ffffff;
+  font-size: 16px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s ease;
+
+  &:hover {
+    background: rgba(16, 33, 47, 0.88);
+  }
+
+  .el-icon {
+    font-size: 16px;
+  }
+}
+
 .preview-image,
 .preview-video-cover,
 .preview-video-thumbnail {
@@ -305,11 +332,13 @@ body {
 
 .preview-image {
   display: block;
+  width: 100%;
 
   .el-image__inner {
     display: block;
     width: 100%;
     height: auto;
+    max-height: 280px;
     object-fit: contain;
   }
 }
@@ -322,7 +351,9 @@ body {
 .preview-video-cover {
   position: relative;
   display: block;
+  width: 100%;
   min-height: 140px;
+  max-height: 280px;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   background: #111a24;
@@ -331,12 +362,15 @@ body {
 
 .preview-video-thumbnail {
   display: block;
+  width: 100%;
   min-height: 140px;
+  max-height: 280px;
 
   .el-image__inner {
     display: block;
     width: 100%;
     height: auto;
+    max-height: 280px;
     object-fit: contain;
   }
 }
@@ -356,16 +390,24 @@ body {
   bottom: 8px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  min-height: 28px;
-  padding: 3px 8px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   border-radius: 6px;
   background: rgba(16, 33, 47, 0.74);
   color: #ffffff;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 16px;
   text-decoration: none;
   cursor: pointer;
+  transition: background 0.2s ease;
+
+  &:hover {
+    background: rgba(16, 33, 47, 0.88);
+  }
+
+  .el-icon {
+    font-size: 16px;
+  }
 }
 
 .preview-fallback {
@@ -408,6 +450,7 @@ body {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  justify-content: space-between;
 }
 
 .gps-coordinate-tag {
@@ -783,6 +826,54 @@ body {
     box-shadow: 0 8px 18px rgba(16, 33, 47, 0.24);
   }
 
+  .marker-image-preview {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 6px;
+    background: #1b7f68;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 800;
+    text-decoration: none;
+    box-shadow: 0 8px 18px rgba(16, 33, 47, 0.24);
+    transition: background 0.2s ease;
+
+    &:hover {
+      background: #16684f;
+    }
+  }
+
+  .marker-media-action {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    background: #1F7F69;
+    color: #ffffff;
+    text-decoration: none;
+    box-shadow: 0 8px 18px rgba(16, 33, 47, 0.24);
+    transition: background 0.2s ease;
+
+    &:hover {
+      background: rgba(27, 127, 104, 1);
+    }
+
+    .icon {
+      width: 20px;
+      height: 20px;
+    }
+  }
+
   .marker-label {
     position: absolute;
     right: 8px;
@@ -793,6 +884,11 @@ body {
     color: #ffffff;
     font-size: 11px;
     font-weight: 700;
+  }
+
+  .marker-label-expanded {
+    right: auto;
+    left: 8px;
   }
 
   .marker-pointer {
@@ -833,7 +929,7 @@ body {
   }
 
   .media-grid {
-    column-count: 3;
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 

@@ -18,6 +18,7 @@ import {
   getNextExpandedPath,
   isMapMarkerExpanded,
   shouldShowMapVideoPlayButton,
+  shouldShowMapImagePreviewButton,
 } from '@/lib/mapMarkerMedia';
 
 const INITIAL_ZOOM = 11;
@@ -525,12 +526,14 @@ function createMarkerContent(item: MediaItem, expanded: boolean): HTMLElement {
     bubble.appendChild(createMarkerVideoPlayLink(item));
   }
 
-  const label = document.createElement('span');
-  label.className = 'marker-label';
-  label.textContent = item.gpsSource === 'xmp' ? 'XMP' : 'GPS';
-  if (item.mediaType !== 'video' || !expanded) {
-    bubble.appendChild(label);
+  if (shouldShowMapImagePreviewButton(item.mediaType, expanded)) {
+    bubble.appendChild(createMarkerImagePreviewLink(item));
   }
+
+  const label = document.createElement('span');
+  label.className = expanded ? 'marker-label marker-label-expanded' : 'marker-label';
+  label.textContent = item.gpsSource === 'xmp' ? 'XMP' : 'GPS';
+  bubble.appendChild(label);
 
   const pointer = document.createElement('span');
   pointer.className = 'marker-pointer';
@@ -579,12 +582,29 @@ function createMarkerMediaElement(item: MediaItem): HTMLElement {
 
 function createMarkerVideoPlayLink(item: MediaItem): HTMLElement {
   const link = document.createElement('a');
-  link.className = 'marker-video-play';
+  link.className = 'marker-media-action';
   link.href = getMediaFileUrl(item.path);
   link.target = '_blank';
   link.rel = 'noreferrer';
-  link.textContent = '新标签页播放';
+  link.innerHTML = '<svg class="icon" viewBox="0 0 1024 1024"><path fill="currentColor" d="M768 256H353.6a32 32 0 1 1 0-64H800a32 32 0 0 1 32 32v448a32 32 0 0 1-64 0V256z"/><path fill="currentColor" d="M777.344 201.344a32 32 0 0 1 45.312 45.312l-544 544a32 32 0 0 1-45.312-45.312l544-544z"/></svg>';
   link.setAttribute('aria-label', `在新标签页播放 ${item.name}`);
+  link.addEventListener('pointerdown', (event) => {
+    event.stopPropagation();
+  });
+  link.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
+  return link;
+}
+
+function createMarkerImagePreviewLink(item: MediaItem): HTMLElement {
+  const link = document.createElement('a');
+  link.className = 'marker-media-action';
+  link.href = getMediaFileUrl(item.path);
+  link.target = '_blank';
+  link.rel = 'noreferrer';
+  link.innerHTML = '<svg class="icon" viewBox="0 0 1024 1024"><path fill="currentColor" d="M768 256H353.6a32 32 0 1 1 0-64H800a32 32 0 0 1 32 32v448a32 32 0 0 1-64 0V256z"/><path fill="currentColor" d="M777.344 201.344a32 32 0 0 1 45.312 45.312l-544 544a32 32 0 0 1-45.312-45.312l544-544z"/></svg>';
+  link.setAttribute('aria-label', `在新标签页查看 ${item.name}`);
   link.addEventListener('pointerdown', (event) => {
     event.stopPropagation();
   });

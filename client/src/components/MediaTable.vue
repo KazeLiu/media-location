@@ -290,6 +290,19 @@ function parseCoordinate(source: string): { longitude: number; latitude: number 
                       </div>
                     </template>
                   </el-image>
+                  <a
+                    v-if="item.mediaType === 'image'"
+                    class="image-preview-badge"
+                    :href="getMediaFileUrl(item.path)"
+                    target="_blank"
+                    rel="noreferrer"
+                    draggable="false"
+                    :aria-label="`在新标签页查看 ${item.name}`"
+                    @click.stop
+                    @dragstart.stop.prevent
+                  >
+                    <el-icon><Picture /></el-icon>
+                  </a>
                   <div
                     v-else
                     class="preview-video-cover"
@@ -319,7 +332,6 @@ function parseCoordinate(source: string): { longitude: number; latitude: number 
                       @dragstart.stop.prevent
                     >
                       <el-icon><VideoCamera /></el-icon>
-                      新标签播放
                     </a>
                   </div>
                 </div>

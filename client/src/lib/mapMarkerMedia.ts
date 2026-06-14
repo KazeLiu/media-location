@@ -25,3 +25,8 @@ export function getMapMarkerMediaMode(mediaType: MediaItem['mediaType']): MapMar
 export function shouldShowMapVideoPlayButton(mediaType: MediaItem['mediaType'], expanded: boolean): boolean {
   return mediaType === 'video' && expanded;
 }
+
+/** 图片只在地图标记展开后显示新标签预览入口。 */
+export function shouldShowMapImagePreviewButton(mediaType: MediaItem['mediaType'], expanded: boolean): boolean {
+  return mediaType === 'image' && expanded;
+}
