@@ -300,6 +300,7 @@ function startEditingGeofence(geofenceId: string): void {
     fillOpacity: 0.3,
     strokeColor: geofence.color,
     strokeWeight: 2,
+    draggable: true, // 允许拖动整个多边形
   });
 
   map.add(polygon);
