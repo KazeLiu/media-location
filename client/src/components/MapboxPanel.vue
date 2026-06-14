@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Search } from '@element-plus/icons-vue';
-import type { MediaItem } from '@shared/contracts';
+import type { MediaItem, Geofence } from '@shared/contracts';
 import {
   formatGcj02Wgs84CoordinateText,
   getCoordinateLabelTextForSystem,
@@ -33,8 +33,15 @@ const props = withDefaults(
     mapboxAccessToken: string;
     items: MediaItem[];
     selectedPath: string;
+    geofences: Geofence[];
+    editingGeofenceId: string;
+    drawingMode: boolean;
   }>(),
-  {},
+  {
+    geofences: () => [],
+    editingGeofenceId: '',
+    drawingMode: false,
+  },
 );
 
 const emit = defineEmits<{
@@ -42,12 +49,26 @@ const emit = defineEmits<{
   place: [payload: { path: string; longitude: number; latitude: number }];
   ready: [];
   error: [message: string];
+  geofenceDrawn: [id: string, coordinates: Array<{ longitude: number; latitude: number }>];
+  geofenceEdited: [id: string, coordinates: Array<{ longitude: number; latitude: number }>];
 }>();
 
 const mapEl = ref<HTMLDivElement | null>(null);
 let map: mapboxgl.Map | null = null;
 let markers: mapboxgl.Marker[] = [];
 let searchMarker: mapboxgl.Marker | null = null;
+let geofenceSourcesIds: string[] = [];
+
+// 围栏占位函数 - 后续可完善为完整的 Mapbox Draw 实现
+function renderGeofences(): void {
+  if (!map) return;
+  // TODO: 使用 @mapbox/mapbox-gl-draw 实现完整的围栏绘制编辑功能
+  console.log('Mapbox 围栏渲染（占位实现）', props.geofences);
+}
+
+watch(() => props.geofences, () => {
+  renderGeofences();
+}, { deep: true });
 let markerDragState: {
   item: MediaItem;
   marker: mapboxgl.Marker;
