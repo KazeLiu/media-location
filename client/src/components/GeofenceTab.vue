@@ -65,9 +65,10 @@ function handleEditorConfirm(data: { name: string; color: string }): void {
   }
 }
 
-function handleEditArea(): void {
-  if (editingGeofence.value) {
-    emit('editArea', editingGeofence.value);
+function handleEditArea(geofence?: Geofence): void {
+  const targetGeofence = geofence || editingGeofence.value;
+  if (targetGeofence) {
+    emit('editArea', targetGeofence);
     editorDialogVisible.value = false;
   }
 }
@@ -122,7 +123,14 @@ function handleEditArea(): void {
               size="small"
               @click.stop="handleEditClick(geofence)"
             >
-              编辑
+              编辑信息
+            </el-button>
+            <el-button
+              :icon="Edit"
+              size="small"
+              @click.stop="handleEditArea(geofence)"
+            >
+              编辑区域
             </el-button>
             <el-button
               :icon="Delete"
