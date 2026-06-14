@@ -34,6 +34,8 @@ const props = defineProps<{
   geofenceEnabled: boolean;
   geofences: Geofence[];
   geofenceBusy: boolean;
+  editingGeofenceId: string;
+  drawingMode: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -142,6 +144,8 @@ function handleUpdateGeofence(id: string, data: { name: string; color: string })
           :enabled="geofenceEnabled"
           :geofences="geofences"
           :busy="geofenceBusy"
+          :editing-geofence-id="editingGeofenceId"
+          :drawing-mode="drawingMode"
           @save="emit('saveGeofences', $event)"
           @create="emit('createGeofence', $event)"
           @update="handleUpdateGeofence"

@@ -134,8 +134,6 @@ function startDrawingGeofence(geofenceId: string): void {
   if (!draw) return;
 
   draw.changeMode('draw_polygon');
-
-  ElMessage.info('在地图上点击绘制围栏，双击完成');
 }
 
 function startEditingGeofence(geofenceId: string): void {
@@ -145,8 +143,6 @@ function startEditingGeofence(geofenceId: string): void {
   if (!drawId) return;
 
   draw.changeMode('direct_select', { featureId: drawId });
-
-  ElMessage.info('拖动顶点编辑围栏，点击空白处完成');
 }
 
 function stopDrawingOrEditing(): void {

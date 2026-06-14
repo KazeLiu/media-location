@@ -181,8 +181,6 @@ function handleCreateGeofence(data: { name: string; color: string }): void {
   geofenceModel.editingGeofenceId = newGeofence.id;
   geofenceModel.drawingMode = true;
   geofenceModel.geofences.push(newGeofence);
-
-  ElMessage.info('请在地图上点击绘制围栏区域');
 }
 
 function handleUpdateGeofence(id: string, data: { name: string; color: string }): void {
@@ -219,7 +217,6 @@ function handleViewGeofence(geofence: Geofence): void {
 function handleEditGeofenceArea(geofence: Geofence): void {
   geofenceModel.editingGeofenceId = geofence.id;
   geofenceModel.drawingMode = true;
-  ElMessage.info('请在地图上编辑围栏区域');
 }
 
 function handleGeofenceDrawn(id: string, coordinates: GeofenceCoordinate[]): void {
@@ -236,8 +233,6 @@ function handleGeofenceDrawn(id: string, coordinates: GeofenceCoordinate[]): voi
     enabled: geofenceModel.enabled,
     geofences: geofenceModel.geofences,
   });
-
-  ElMessage.success('围栏绘制完成');
 }
 
 function handleGeofenceEdited(id: string, coordinates: GeofenceCoordinate[]): void {
@@ -254,8 +249,6 @@ function handleGeofenceEdited(id: string, coordinates: GeofenceCoordinate[]): vo
     enabled: geofenceModel.enabled,
     geofences: geofenceModel.geofences,
   });
-
-  ElMessage.success('围栏编辑完成');
 }
 
 async function handleDropToGeofence(geofence: Geofence, mediaPath: string): Promise<void> {
@@ -647,6 +640,8 @@ onBeforeUnmount(clearMediaFilterTimer);
           :geofence-enabled="geofenceModel.enabled"
           :geofences="geofenceModel.geofences"
           :geofence-busy="geofenceModel.busy"
+          :editing-geofence-id="geofenceModel.editingGeofenceId"
+          :drawing-mode="geofenceModel.drawingMode"
           @add-root="layoutModel.folderPickerOpen = true"
           @open-dir="openDirectory"
           @remove-root="removeLibraryRoot"

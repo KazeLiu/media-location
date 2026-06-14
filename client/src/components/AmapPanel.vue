@@ -271,8 +271,6 @@ function startDrawingGeofence(geofenceId: string): void {
     map?.remove(polygon);
     mouseTool.close(true);
   });
-
-  ElMessage.info('在地图上点击绘制围栏，双击完成');
 }
 
 function startEditingGeofence(geofenceId: string): void {
@@ -324,8 +322,6 @@ function startEditingGeofence(geofenceId: string): void {
     emit('geofenceEdited', geofenceId, wgs84Coords);
     stopDrawingOrEditing();
   });
-
-  ElMessage.info('拖动顶点编辑围栏，完成后点击"保存"');
 }
 
 function stopDrawingOrEditing(): void {

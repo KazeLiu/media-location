@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Delete, Edit, Location } from '@element-plus/icons-vue';
 import type { Geofence, GeofenceConfig } from '@shared/contracts';
@@ -9,6 +9,8 @@ const props = defineProps<{
   enabled: boolean;
   geofences: Geofence[];
   busy: boolean;
+  editingGeofenceId: string;
+  drawingMode: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -22,6 +24,23 @@ const emit = defineEmits<{
 
 const editorDialogVisible = ref(false);
 const editingGeofence = ref<Geofence | null>(null);
+
+const statusText = computed(() => {
+  if (!props.editingGeofenceId) return '';
+
+  const geofence = props.geofences.find(g => g.id === props.editingGeofenceId);
+  if (!geofence) return '';
+
+  if (props.drawingMode) {
+    if (geofence.coordinates.length === 0) {
+      return `正在绘制"${geofence.name}"`;
+    } else {
+      return `正在编辑"${geofence.name}"`;
+    }
+  }
+
+  return '';
+});
 
 function handleEnabledChange(value: boolean): void {
   emit('save', {
@@ -86,6 +105,11 @@ function handleEditArea(): void {
       <el-button type="primary" :disabled="busy" @click="handleCreateClick">
         新建围栏
       </el-button>
+      <transition name="fade">
+        <div v-if="statusText" class="drawing-status">
+          {{ statusText }}
+        </div>
+      </transition>
     </div>
 
     <div class="geofence-list">
@@ -161,6 +185,33 @@ function handleEditArea(): void {
 .geofence-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.drawing-status {
+  padding: 8px 16px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  border-radius: 4px;
+  font-size: 14px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
 }
 
 .geofence-list {
