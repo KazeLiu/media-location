@@ -5,6 +5,7 @@ import type {
   FolderPickerEntry,
   FolderPickerResponse,
   FolderPickerShortcuts,
+  GeofenceConfig,
 } from '@shared/contracts';
 
 const API_BASE = '/api';
@@ -95,5 +96,16 @@ export function writeClientLog(payload: ClientLogPayload): Promise<{ ok: boolean
   return requestJson<{ ok: boolean }>('/client-log', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export function getGeofenceConfig(): Promise<GeofenceConfig> {
+  return requestJson<GeofenceConfig>('/geofences');
+}
+
+export function saveGeofenceConfig(config: GeofenceConfig): Promise<GeofenceConfig> {
+  return requestJson<GeofenceConfig>('/geofences', {
+    method: 'POST',
+    body: JSON.stringify(config),
   });
 }
