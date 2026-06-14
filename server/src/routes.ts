@@ -10,6 +10,7 @@ import { readRecentLogs, writeOperationLog } from './operationLog';
 import { getCachedThumbnail, ThumbnailGenerationError } from './thumbnails';
 import { writeGpsToXmpFile } from './xmp';
 import { writeGpsToExif, checkExiftoolAvailable } from './exif';
+import { loadGeofenceConfig, saveGeofenceConfig } from './geofenceStore';
 
 export interface ApiRouterOptions {
   shutdown?: () => void | Promise<void>;
@@ -20,6 +21,68 @@ export function createApiRouter(options: ApiRouterOptions = {}): express.Router 
 
   router.get('/health', (_req, res) => {
     res.json({ ok: true });
+  });
+
+  router.get('/geofences', async (_req, res, next) => {
+    const startedAt = Date.now();
+    try {
+      const config = await loadConfig();
+      const geofencePath = path.join(path.dirname(config._configPath || 'data/app.config.json'), 'geofences.json');
+      const geofenceConfig = await loadGeofenceConfig(geofencePath);
+
+      await writeOperationLog({
+        level: 'info',
+        action: 'geofences:get',
+        status: 'ok',
+        durationMs: Date.now() - startedAt,
+      });
+
+      res.json(geofenceConfig);
+    } catch (error) {
+      await writeOperationLog({
+        level: 'error',
+        action: 'geofences:get',
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        durationMs: Date.now() - startedAt,
+      });
+      next(error);
+    }
+  });
+
+  router.post('/geofences', async (req, res, next) => {
+    const startedAt = Date.now();
+    try {
+      const config = await loadConfig();
+      const geofencePath = path.join(path.dirname(config._configPath || 'data/app.config.json'), 'geofences.json');
+
+      const geofenceConfig = req.body;
+      if (!geofenceConfig || typeof geofenceConfig.enabled !== 'boolean' || !Array.isArray(geofenceConfig.geofences)) {
+        res.status(400).json({ error: 'Invalid geofence config format' });
+        return;
+      }
+
+      const saved = await saveGeofenceConfig(geofencePath, geofenceConfig);
+
+      await writeOperationLog({
+        level: 'info',
+        action: 'geofences:save',
+        status: 'ok',
+        details: { count: saved.geofences.length },
+        durationMs: Date.now() - startedAt,
+      });
+
+      res.json(saved);
+    } catch (error) {
+      await writeOperationLog({
+        level: 'error',
+        action: 'geofences:save',
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        durationMs: Date.now() - startedAt,
+      });
+      next(error);
+    }
   });
 
   router.post('/shutdown', async (_req, res, next) => {
