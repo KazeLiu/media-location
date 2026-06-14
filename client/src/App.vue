@@ -5,6 +5,7 @@ import type { AppConfig, BrowseResponse, MediaItem, MapProvider, GpsWriteMode, G
 import { browseDirectory, getConfig, saveConfig, setMediaGps, getGeofenceConfig, saveGeofenceConfig } from './api';
 import { getRandomPointInPolygon } from './lib/geofenceUtils';
 import FolderPickerDialog from './components/FolderPickerDialog.vue';
+import GeofenceFloatingList from './components/GeofenceFloatingList.vue';
 import MapPanel from './components/MapPanel.vue';
 import LeftPanel from './components/LeftPanel.vue';
 import ResizeHandle from './components/ResizeHandle.vue';
@@ -254,6 +255,30 @@ function handleGeofenceEdited(id: string, coordinates: GeofenceCoordinate[]): vo
   });
 
   ElMessage.success('围栏编辑完成');
+}
+
+async function handleDropToGeofence(geofence: Geofence, mediaPath: string): Promise<void> {
+  try {
+    if (geofence.coordinates.length < 3) {
+      ElMessage.warning('该围栏还未绘制区域');
+      return;
+    }
+
+    const randomCoord = getRandomPointInPolygon(geofence.coordinates);
+
+    await placeMedia({
+      path: mediaPath,
+      longitude: randomCoord.longitude,
+      latitude: randomCoord.latitude,
+    });
+
+    selectionModel.selectedPath = mediaPath;
+
+    ElMessage.success(`已设置到围栏"${geofence.name}"内的随机位置`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '设置失败';
+    ElMessage.error(message);
+  }
 }
 
 async function openPreferredRoot(): Promise<void> {
@@ -667,7 +692,13 @@ onBeforeUnmount(clearMediaFilterTimer);
           @error="handleMapError"
           @geofence-drawn="handleGeofenceDrawn"
           @geofence-edited="handleGeofenceEdited"
-        />
+        >
+          <GeofenceFloatingList
+            v-if="geofenceModel.enabled"
+            :geofences="geofenceModel.geofences"
+            @drop="handleDropToGeofence"
+          />
+        </MapPanel>
       </div>
     </div>
 
