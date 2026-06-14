@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue';
-import type { AppConfig, BrowseResponse, MediaItem } from '@shared/contracts';
+import type { AppConfig, BrowseResponse, MediaItem, Geofence, GeofenceConfig } from '@shared/contracts';
 import DirectoryBrowser from './DirectoryBrowser.vue';
 import MediaTable from './MediaTable.vue';
 import SettingTab from './SettingTab.vue';
 import GuideTab from './GuideTab.vue';
+import GeofenceTab from './GeofenceTab.vue';
 
 const props = defineProps<{
   // Browser props
@@ -28,6 +29,11 @@ const props = defineProps<{
   // Settings props
   config: AppConfig;
   settingsBusy: boolean;
+
+  // Geofence props
+  geofenceEnabled: boolean;
+  geofences: Geofence[];
+  geofenceBusy: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -48,6 +54,14 @@ const emit = defineEmits<{
 
   // Settings events
   saveSettings: [config: AppConfig];
+
+  // Geofence events
+  saveGeofences: [config: GeofenceConfig];
+  createGeofence: [data: { name: string; color: string }];
+  updateGeofence: [id: string, data: { name: string; color: string }];
+  deleteGeofence: [id: string];
+  viewGeofence: [geofence: Geofence];
+  editGeofenceArea: [geofence: Geofence];
 }>();
 
 const roots = computed(() => props.config.libraryRoots);
@@ -113,6 +127,20 @@ const collapseModel = reactive({
 
       <el-tab-pane label="用法指南">
         <GuideTab />
+      </el-tab-pane>
+
+      <el-tab-pane label="电子围栏">
+        <GeofenceTab
+          :enabled="geofenceEnabled"
+          :geofences="geofences"
+          :busy="geofenceBusy"
+          @save="emit('saveGeofences', $event)"
+          @create="emit('createGeofence', $event)"
+          @update="emit('updateGeofence', $event[0], $event[1])"
+          @delete="emit('deleteGeofence', $event)"
+          @view="emit('viewGeofence', $event)"
+          @edit-area="emit('editGeofenceArea', $event)"
+        />
       </el-tab-pane>
     </el-tabs>
   </aside>
