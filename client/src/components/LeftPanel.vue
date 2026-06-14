@@ -127,6 +127,22 @@ function handleUpdateGeofence(id: string, data: { name: string; color: string })
         </div>
       </el-tab-pane>
 
+      <el-tab-pane label="电子围栏">
+        <GeofenceTab
+            :enabled="geofenceEnabled"
+            :geofences="geofences"
+            :busy="geofenceBusy"
+            :editing-geofence-id="editingGeofenceId"
+            :drawing-mode="drawingMode"
+            @save="emit('saveGeofences', $event)"
+            @create="emit('createGeofence', $event)"
+            @update="handleUpdateGeofence"
+            @delete="emit('deleteGeofence', $event)"
+            @view="emit('viewGeofence', $event)"
+            @edit-area="emit('editGeofenceArea', $event)"
+        />
+      </el-tab-pane>
+
       <el-tab-pane label="设置">
         <SettingTab
           :config="config"
@@ -139,21 +155,6 @@ function handleUpdateGeofence(id: string, data: { name: string; color: string })
         <GuideTab />
       </el-tab-pane>
 
-      <el-tab-pane label="电子围栏">
-        <GeofenceTab
-          :enabled="geofenceEnabled"
-          :geofences="geofences"
-          :busy="geofenceBusy"
-          :editing-geofence-id="editingGeofenceId"
-          :drawing-mode="drawingMode"
-          @save="emit('saveGeofences', $event)"
-          @create="emit('createGeofence', $event)"
-          @update="handleUpdateGeofence"
-          @delete="emit('deleteGeofence', $event)"
-          @view="emit('viewGeofence', $event)"
-          @edit-area="emit('editGeofenceArea', $event)"
-        />
-      </el-tab-pane>
     </el-tabs>
   </aside>
 </template>
