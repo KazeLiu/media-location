@@ -35,25 +35,42 @@ body {
   overflow: hidden;
 }
 
-.floating-brand {
-  position: fixed;
-  z-index: 30;
-  border: 1px solid var(--border);
+.app-split-layout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+.left-section {
+  flex: 0 0 auto;
+  height: 100%;
   background: var(--surface);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(14px);
+  border-right: 1px solid var(--border);
+}
+
+.right-section {
+  position: relative;
+  flex: 1 1 auto;
+  height: 100%;
+  overflow: hidden;
 }
 
 .floating-brand {
+  position: absolute;
   top: 14px;
   left: 14px;
+  z-index: 30;
   display: inline-flex;
   align-items: baseline;
   gap: 8px;
   padding: 0 14px;
+  border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
   font-weight: 700;
-      line-height: 29px;
+  line-height: 29px;
 
   small {
     color: var(--text-muted);
@@ -62,70 +79,9 @@ body {
   }
 }
 
-.settings-trigger {
-  position: fixed;
-  top: 14px;
-  right: 14px;
-  z-index: 40;
-  box-shadow: var(--shadow);
-}
+// 左侧面板布局相关样式已移至组件内部
 
-.floating-workbench {
-  position: fixed;
-  top: 68px;
-  left: 14px;
-  bottom: 26px;
-  z-index: 25;
-  width: min(420px, calc(100vw - 28px));
-  pointer-events: none;
-}
-
-.stack-column {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-  height: 100%;
-  min-height: 0;
-  pointer-events: auto;
-}
-
-.stack-column.media-is-collapsed {
-  grid-template-rows: minmax(0, 1fr) auto;
-}
-
-.stack-column.directory-is-collapsed {
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.stack-column.directory-is-collapsed.media-is-collapsed {
-  align-content: start;
-  grid-template-rows: auto auto;
-}
-
-.panel {
-  display: grid;
-  gap: 12px;
-  min-height: 0;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(14px);
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 32px;
-}
-
-.panel-title-button {
-  color: #10212f;
-  font-weight: 700;
-}
+// Panel 基础样式已整合到组件内
 
 .root-section,
 .folder-section {
@@ -145,9 +101,42 @@ body {
   cursor: pointer;
 }
 
-.browser-panel {
-  grid-template-rows: auto minmax(0, 1fr);
+.browser-section,
+.media-section-wrapper {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
   overflow: hidden;
+}
+
+.browser-section {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.media-section-wrapper {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.section-title {
+  margin: 0;
+  color: #10212f;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.section-title-button {
+  color: #10212f;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 0;
 }
 
 .folder-scrollbar {
@@ -192,11 +181,7 @@ body {
   }
 }
 
-.media-panel {
-  align-content: start;
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
-}
+// Media panel 样式已合并到 media-section-wrapper
 
 .media-content {
   display: grid;
@@ -493,7 +478,7 @@ body {
 
 .map-panel,
 .map-canvas {
-  position: fixed;
+  position: absolute;
   inset: 0;
 }
 
@@ -506,11 +491,11 @@ body {
 }
 
 .map-search {
-  position: fixed;
+  position: absolute;
   top: 15px;
   left: 220px;
   z-index: 28;
-  width: min(215px,100vw - 360px);
+  width: min(215px, 100% - 360px);
   box-shadow: var(--shadow);
 
   .el-autocomplete {
@@ -527,11 +512,11 @@ body {
 }
 
 .map-coordinate {
-  position: fixed;
+  position: absolute;
   left: 50%;
   bottom: 14px;
   z-index: 28;
-  max-width: calc(100vw - 28px);
+  max-width: calc(100% - 28px);
   transform: translateX(-50%);
   box-shadow: var(--shadow);
 
@@ -554,7 +539,7 @@ body {
 }
 
 .map-layer-switch {
-  position: fixed;
+  position: absolute;
   right: 14px;
   bottom: 14px;
   z-index: 28;
@@ -574,7 +559,7 @@ body {
 }
 
 .map-hint {
-  position: fixed;
+  position: absolute;
   right: 66px;
   top: 18px;
   z-index: 28;
@@ -622,67 +607,7 @@ body {
   padding: 8px;
 }
 
-.settings-panel {
-  .el-drawer__body {
-    display: flex;
-    min-height: 0;
-  }
-}
-
-.settings-content {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-height: 100%;
-}
-
-.settings-form {
-  display: grid;
-  gap: 4px;
-}
-
-.usage-guide {
-  margin-top: auto;
-  padding-top: 28px;
-  border-top: 1px solid var(--border);
-  color: #263849;
-
-  h3 {
-    margin: 0 0 10px;
-    color: #10212f;
-    font-size: 15px;
-    font-weight: 700;
-  }
-
-  ol {
-    display: grid;
-    gap: 8px;
-    margin: 0;
-    padding-left: 20px;
-    color: var(--text-muted);
-    font-size: 13px;
-    line-height: 1.55;
-  }
-
-  a {
-    color: var(--accent);
-    font-weight: 600;
-    text-decoration: none;
-
-    &:hover,
-    &:focus-visible {
-      text-decoration: underline;
-    }
-  }
-
-  p {
-    margin: 12px 0 0;
-    color: #435467;
-    font-size: 12px;
-    line-height: 1.6;
-    word-break: break-word;
-  }
-}
+// Drawer 相关样式已移除，现在使用左侧面板
 
 .map-search-marker {
   position: relative;
@@ -885,36 +810,25 @@ body {
 }
 
 @media (max-width: 900px) {
-  .floating-workbench {
-    top: auto;
+  .app-split-layout {
+    flex-direction: column;
+  }
+
+  .left-section {
+    width: 100% !important;
     max-height: 50vh;
-  }
-
-  .stack-column {
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .stack-column.media-is-collapsed {
-    grid-template-rows: minmax(0, 1fr) auto;
-  }
-
-  .stack-column.directory-is-collapsed {
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .stack-column.directory-is-collapsed.media-is-collapsed {
-    grid-template-rows: auto auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
   }
 
   .map-search {
-    top: 64px;
+    top: 14px;
     left: 14px;
-    width: calc(100vw - 28px);
-    transform: none;
+    width: calc(100% - 28px);
   }
 
   .map-hint {
-    top: 116px;
+    top: 70px;
     right: 14px;
   }
 

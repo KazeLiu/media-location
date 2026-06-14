@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Setting } from '@element-plus/icons-vue';
 import type { AppConfig, BrowseResponse, MediaItem, MapProvider, GpsWriteMode } from '@shared/contracts';
 import { browseDirectory, getConfig, saveConfig, setMediaGps } from './api';
-import DirectoryBrowser from './components/DirectoryBrowser.vue';
 import FolderPickerDialog from './components/FolderPickerDialog.vue';
 import MapPanel from './components/MapPanel.vue';
-import MediaTable from './components/MediaTable.vue';
-import SettingsPanel from './components/SettingsPanel.vue';
+import LeftPanel from './components/LeftPanel.vue';
+import ResizeHandle from './components/ResizeHandle.vue';
 
 const MEDIA_PAGE_LIMIT = 120;
 
@@ -66,13 +64,34 @@ const pinModel = reactive({
   items: [] as MediaItem[],
 });
 
-// Layout block: owns floating panels and dialogs.
+// Layout block: owns split panel width.
 const layoutModel = reactive({
-  directoryCollapsed: false,
-  mediaCollapsed: false,
-  settingsOpen: false,
+  leftPanelWidth: loadLeftPanelWidth(),
   folderPickerOpen: false,
 });
+
+function loadLeftPanelWidth(): number {
+  try {
+    const saved = localStorage.getItem('leftPanelWidth');
+    if (saved) {
+      const width = parseInt(saved, 10);
+      if (!isNaN(width) && width >= 420) {
+        return width;
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to load left panel width:', error);
+  }
+  return 440;
+}
+
+function saveLeftPanelWidth(width: number): void {
+  try {
+    localStorage.setItem('leftPanelWidth', String(width));
+  } catch (error) {
+    console.warn('Failed to save left panel width:', error);
+  }
+}
 
 const roots = computed(() => settingsModel.config.libraryRoots);
 const visibleMedia = computed(() => mergeMediaItems(pinModel.items, browserModel.media));
@@ -84,8 +103,6 @@ async function loadInitial(): Promise<void> {
   try {
     const config = await getConfig();
     applyConfig(config);
-    const hasMapConfig = config.amapKey || config.mapboxAccessToken;
-    layoutModel.settingsOpen = !hasMapConfig;
     await openPreferredRoot();
   } catch (error) {
     const message = error instanceof Error ? error.message : '加载失败';
@@ -97,15 +114,12 @@ async function loadInitial(): Promise<void> {
 }
 
 function handleMapReady(): void {
-  const hasMapConfig = settingsModel.config.amapKey || settingsModel.config.mapboxAccessToken;
-  if (hasMapConfig) {
-    layoutModel.settingsOpen = false;
-  }
+  // Map is ready, no action needed
 }
 
 function handleMapError(message: string): void {
   settingsModel.message = message;
-  layoutModel.settingsOpen = true;
+  ElMessage.error(message);
 }
 
 function applyConfig(config: AppConfig): void {
@@ -344,8 +358,6 @@ async function saveSettings(config: AppConfig): Promise<void> {
     });
     applyConfig(saved);
     settingsModel.message = '已保存设置';
-    const hasMapConfig = saved.amapKey || saved.mapboxAccessToken;
-    layoutModel.settingsOpen = !hasMapConfig;
     ElMessage.success('设置已保存');
   } catch (error) {
     const message = error instanceof Error ? error.message : '保存失败';
@@ -455,90 +467,75 @@ function handleSelectItem(item: MediaItem): void {
   selectionModel.selectedPath = item.path;
 }
 
+function handlePanelResize(width: number): void {
+  layoutModel.leftPanelWidth = width;
+  saveLeftPanelWidth(width);
+}
+
 onMounted(loadInitial);
 onBeforeUnmount(clearMediaFilterTimer);
 </script>
 
 <template>
   <div class="app-shell">
-    <MapPanel
-      class="map-layer"
-      :map-provider="settingsModel.config.mapProvider"
-      :amap-key="settingsModel.config.amapKey"
-      :amap-security-code="settingsModel.config.amapSecurityCode"
-      :mapbox-access-token="settingsModel.config.mapboxAccessToken"
-      :items="visibleMedia"
-      :selected-path="selectionModel.selectedPath"
-      @select="handleSelectItem"
-      @place="placeMedia"
-      @ready="handleMapReady"
-      @error="handleMapError"
-    />
-
-    <div class="floating-brand">
-      <span>{{ settingsModel.config.appName }}</span>
-      <small>{{ settingsModel.config.appVersion }}</small>
-    </div>
-
-    <el-button
-      class="settings-trigger"
-      circle
-      :icon="Setting"
-      @click="layoutModel.settingsOpen = true"
-    />
-
-    <SettingsPanel
-      v-if="layoutModel.settingsOpen"
-      :config="settingsModel.config"
-      :busy="settingsModel.busy"
-      @save="saveSettings"
-      @close="layoutModel.settingsOpen = false"
-    />
-
-    <FolderPickerDialog v-model="layoutModel.folderPickerOpen" @confirm="addLibraryRoot" />
-
-    <main class="floating-workbench">
-      <section
-        class="stack-column"
-        :class="{
-          'directory-is-collapsed': layoutModel.directoryCollapsed,
-          'media-is-collapsed': layoutModel.mediaCollapsed,
-        }"
-      >
-        <DirectoryBrowser
+    <div class="app-split-layout">
+      <div class="left-section" :style="{ width: `${layoutModel.leftPanelWidth}px` }">
+        <LeftPanel
           :current-dir="browserModel.currentDir"
-          :roots="roots"
-          :loading="browserModel.busy"
-          :collapsed="layoutModel.directoryCollapsed"
-          :refresh-version="browserModel.directoryTreeRefreshVersion"
-          @add-root="layoutModel.folderPickerOpen = true"
-          @open-dir="openDirectory"
-          @remove-root="removeLibraryRoot"
-          @refresh="refresh"
-          @toggle="layoutModel.directoryCollapsed = !layoutModel.directoryCollapsed"
-        />
-
-        <MediaTable
-          :current-dir="browserModel.currentDir"
-          :items="browserModel.media"
+          :parent-dir="browserModel.parentDir"
+          :root-dir="browserModel.rootDir"
+          :entries="browserModel.entries"
+          :browser-loading="browserModel.busy"
+          :directory-tree-refresh-version="browserModel.directoryTreeRefreshVersion"
+          :media="browserModel.media"
           :pinned-items="pinModel.items"
           :media-total="browserModel.mediaTotal"
           :media-filter="browserModel.mediaFilter"
           :has-more="mediaHasMore"
           :selected-path="selectionModel.selectedPath"
-          :loading="browserModel.busy"
+          :media-loading="browserModel.busy"
           :loading-more="browserModel.loadingMore"
-          :collapsed="layoutModel.mediaCollapsed"
-          @select="handleSelectItem"
+          :config="settingsModel.config"
+          :settings-busy="settingsModel.busy"
+          @add-root="layoutModel.folderPickerOpen = true"
+          @open-dir="openDirectory"
+          @remove-root="removeLibraryRoot"
+          @refresh="refresh"
+          @select-media="handleSelectItem"
           @drag-start="handleDragStart"
           @manual-place="placeMedia"
           @toggle-pin="togglePinnedMedia"
           @pin-current-dir="pinCurrentDirectory"
           @filter-change="handleMediaFilterChange"
           @load-more="loadMoreMedia"
-          @toggle="layoutModel.mediaCollapsed = !layoutModel.mediaCollapsed"
+          @save-settings="saveSettings"
         />
-      </section>
-    </main>
+      </div>
+
+      <ResizeHandle @resize="handlePanelResize" />
+
+      <div class="right-section">
+        <div class="floating-brand">
+          <span>{{ settingsModel.config.appName }}</span>
+          <small>{{ settingsModel.config.appVersion }}</small>
+        </div>
+
+        <MapPanel
+          class="map-layer"
+          :map-provider="settingsModel.config.mapProvider"
+          :amap-key="settingsModel.config.amapKey"
+          :amap-security-code="settingsModel.config.amapSecurityCode"
+          :mapbox-access-token="settingsModel.config.mapboxAccessToken"
+          :items="visibleMedia"
+          :selected-path="selectionModel.selectedPath"
+          @select="handleSelectItem"
+          @place="placeMedia"
+          @ready="handleMapReady"
+          @error="handleMapError"
+        />
+      </div>
+    </div>
+
+    <FolderPickerDialog v-model="layoutModel.folderPickerOpen" @confirm="addLibraryRoot" />
   </div>
 </template>

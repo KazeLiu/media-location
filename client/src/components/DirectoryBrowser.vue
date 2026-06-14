@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue';
 import { ElMessage } from 'element-plus';
-import { ArrowDown, ArrowRight, Delete, FolderAdd, Refresh } from '@element-plus/icons-vue';
+import { Delete, FolderAdd, Refresh, ArrowDown, ArrowRight } from '@element-plus/icons-vue';
 import type { FolderPickerEntry } from '@shared/contracts';
 import { browseLibraryDirectories } from '@/api';
 import {
@@ -103,12 +103,12 @@ function handleRemoveRoot(path: string, event: MouseEvent): void {
 </script>
 
 <template>
-  <section class="panel browser-panel">
-    <header class="panel-header">
+  <section class="browser-section">
+    <header class="section-header">
       <el-button
         link
         :icon="collapsed ? ArrowRight : ArrowDown"
-        class="panel-title-button"
+        class="section-title-button"
         @click="emit('toggle')"
       >
         目录
