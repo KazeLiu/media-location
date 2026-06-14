@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive } from 'vue';
 import { ElMessage } from 'element-plus';
-import type { AppConfig, BrowseResponse, MediaItem, MapProvider, GpsWriteMode, Geofence, GeofenceConfig } from '@shared/contracts';
+import type { AppConfig, BrowseResponse, MediaItem, MapProvider, GpsWriteMode, Geofence, GeofenceConfig, GeofenceCoordinate } from '@shared/contracts';
 import { browseDirectory, getConfig, saveConfig, setMediaGps, getGeofenceConfig, saveGeofenceConfig } from './api';
 import { getRandomPointInPolygon } from './lib/geofenceUtils';
 import FolderPickerDialog from './components/FolderPickerDialog.vue';
@@ -218,6 +218,42 @@ function handleEditGeofenceArea(geofence: Geofence): void {
   geofenceModel.editingGeofenceId = geofence.id;
   geofenceModel.drawingMode = true;
   ElMessage.info('请在地图上编辑围栏区域');
+}
+
+function handleGeofenceDrawn(id: string, coordinates: GeofenceCoordinate[]): void {
+  const index = geofenceModel.geofences.findIndex(g => g.id === id);
+  if (index === -1) return;
+
+  geofenceModel.geofences[index].coordinates = coordinates;
+  geofenceModel.geofences[index].updatedAt = new Date().toISOString();
+
+  geofenceModel.editingGeofenceId = '';
+  geofenceModel.drawingMode = false;
+
+  void saveGeofences({
+    enabled: geofenceModel.enabled,
+    geofences: geofenceModel.geofences,
+  });
+
+  ElMessage.success('围栏绘制完成');
+}
+
+function handleGeofenceEdited(id: string, coordinates: GeofenceCoordinate[]): void {
+  const index = geofenceModel.geofences.findIndex(g => g.id === id);
+  if (index === -1) return;
+
+  geofenceModel.geofences[index].coordinates = coordinates;
+  geofenceModel.geofences[index].updatedAt = new Date().toISOString();
+
+  geofenceModel.editingGeofenceId = '';
+  geofenceModel.drawingMode = false;
+
+  void saveGeofences({
+    enabled: geofenceModel.enabled,
+    geofences: geofenceModel.geofences,
+  });
+
+  ElMessage.success('围栏编辑完成');
 }
 
 async function openPreferredRoot(): Promise<void> {
@@ -622,10 +658,15 @@ onBeforeUnmount(clearMediaFilterTimer);
           :mapbox-access-token="settingsModel.config.mapboxAccessToken"
           :items="visibleMedia"
           :selected-path="selectionModel.selectedPath"
+          :geofences="geofenceModel.geofences"
+          :editing-geofence-id="geofenceModel.editingGeofenceId"
+          :drawing-mode="geofenceModel.drawingMode"
           @select="handleSelectItem"
           @place="placeMedia"
           @ready="handleMapReady"
           @error="handleMapError"
+          @geofence-drawn="handleGeofenceDrawn"
+          @geofence-edited="handleGeofenceEdited"
         />
       </div>
     </div>

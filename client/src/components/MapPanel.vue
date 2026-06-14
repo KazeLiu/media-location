@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { MediaItem, MapProvider } from '@shared/contracts';
+import type { MediaItem, MapProvider, Geofence, GeofenceCoordinate } from '@shared/contracts';
 import AmapPanel from './AmapPanel.vue';
 import MapboxPanel from './MapboxPanel.vue';
 
@@ -12,10 +12,16 @@ const props = withDefaults(
     mapboxAccessToken: string;
     items: MediaItem[];
     selectedPath: string;
+    geofences: Geofence[];
+    editingGeofenceId: string;
+    drawingMode: boolean;
   }>(),
   {
     amapSecurityCode: '',
     mapboxAccessToken: '',
+    geofences: () => [],
+    editingGeofenceId: '',
+    drawingMode: false,
   },
 );
 
@@ -24,6 +30,8 @@ const emit = defineEmits<{
   place: [payload: { path: string; longitude: number; latitude: number }];
   ready: [];
   error: [message: string];
+  geofenceDrawn: [id: string, coordinates: GeofenceCoordinate[]];
+  geofenceEdited: [id: string, coordinates: GeofenceCoordinate[]];
 }>();
 
 const currentMapComponent = computed(() => {
@@ -55,8 +63,13 @@ function handleError(message: string): void {
     :mapbox-access-token="mapboxAccessToken"
     :items="items"
     :selected-path="selectedPath"
+    :geofences="geofences"
+    :editing-geofence-id="editingGeofenceId"
+    :drawing-mode="drawingMode"
     @select="handleSelect"
     @place="handlePlace"
+    @geofence-drawn="$emit('geofenceDrawn', $event[0], $event[1])"
+    @geofence-edited="$emit('geofenceEdited', $event[0], $event[1])"
     @ready="handleReady"
     @error="handleError"
   />
