@@ -166,6 +166,60 @@ async function saveGeofences(config: GeofenceConfig): Promise<void> {
   }
 }
 
+function handleCreateGeofence(data: { name: string; color: string }): void {
+  const newGeofence: Geofence = {
+    id: crypto.randomUUID(),
+    name: data.name,
+    color: data.color,
+    coordinates: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  geofenceModel.editingGeofenceId = newGeofence.id;
+  geofenceModel.drawingMode = true;
+  geofenceModel.geofences.push(newGeofence);
+
+  ElMessage.info('请在地图上点击绘制围栏区域');
+}
+
+function handleUpdateGeofence(id: string, data: { name: string; color: string }): void {
+  const index = geofenceModel.geofences.findIndex(g => g.id === id);
+  if (index === -1) return;
+
+  geofenceModel.geofences[index] = {
+    ...geofenceModel.geofences[index],
+    name: data.name,
+    color: data.color,
+    updatedAt: new Date().toISOString(),
+  };
+
+  void saveGeofences({
+    enabled: geofenceModel.enabled,
+    geofences: geofenceModel.geofences,
+  });
+}
+
+async function handleDeleteGeofence(id: string): Promise<void> {
+  geofenceModel.geofences = geofenceModel.geofences.filter(g => g.id !== id);
+  await saveGeofences({
+    enabled: geofenceModel.enabled,
+    geofences: geofenceModel.geofences,
+  });
+}
+
+function handleViewGeofence(geofence: Geofence): void {
+  geofenceModel.editingGeofenceId = geofence.id;
+  geofenceModel.drawingMode = false;
+  // 地图组件会根据 editingGeofenceId 自动显示和缩放
+}
+
+function handleEditGeofenceArea(geofence: Geofence): void {
+  geofenceModel.editingGeofenceId = geofence.id;
+  geofenceModel.drawingMode = true;
+  ElMessage.info('请在地图上编辑围栏区域');
+}
+
 async function openPreferredRoot(): Promise<void> {
   const firstRoot = settingsModel.config.libraryRoots[0];
   if (firstRoot) {
@@ -528,6 +582,9 @@ onBeforeUnmount(clearMediaFilterTimer);
           :loading-more="browserModel.loadingMore"
           :config="settingsModel.config"
           :settings-busy="settingsModel.busy"
+          :geofence-enabled="geofenceModel.enabled"
+          :geofences="geofenceModel.geofences"
+          :geofence-busy="geofenceModel.busy"
           @add-root="layoutModel.folderPickerOpen = true"
           @open-dir="openDirectory"
           @remove-root="removeLibraryRoot"
@@ -540,6 +597,12 @@ onBeforeUnmount(clearMediaFilterTimer);
           @filter-change="handleMediaFilterChange"
           @load-more="loadMoreMedia"
           @save-settings="saveSettings"
+          @save-geofences="saveGeofences"
+          @create-geofence="handleCreateGeofence"
+          @update-geofence="handleUpdateGeofence"
+          @delete-geofence="handleDeleteGeofence"
+          @view-geofence="handleViewGeofence"
+          @edit-geofence-area="handleEditGeofenceArea"
         />
       </div>
 
