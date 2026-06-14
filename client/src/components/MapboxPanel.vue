@@ -95,6 +95,7 @@ function renderGeofences(): void {
       },
       properties: {
         geofenceId: geofence.id,
+        user_color: geofence.color, // 设置自定义颜色
       },
     };
 
@@ -103,34 +104,8 @@ function renderGeofences(): void {
       geofencePolygonIds.set(geofence.id, featureIds[0]);
     }
   }
-
-  // 设置多边形样式（通过修改 draw 的内部样式）
-  updateGeofenceStyles();
 }
 
-function updateGeofenceStyles(): void {
-  if (!map) return;
-
-  const geofenceColorMap: Record<string, string> = {};
-  for (const geofence of props.geofences) {
-    geofenceColorMap[geofence.id] = geofence.color;
-  }
-
-  // 通过 map.setPaintProperty 修改样式
-  try {
-    const features = draw.getAll();
-    features.features.forEach((feature: any) => {
-      const geofenceId = feature.properties?.geofenceId;
-      if (geofenceId && geofenceColorMap[geofenceId]) {
-        // Mapbox Draw 使用内置图层，需要通过 CSS 或修改源码来自定义颜色
-        // 这里我们使用一个简化方案：通过 setFeatureProperty
-        draw.setFeatureProperty(feature.id, 'color', geofenceColorMap[geofenceId]);
-      }
-    });
-  } catch (e) {
-    // 样式更新失败不影响功能
-  }
-}
 
 function startDrawingGeofence(geofenceId: string): void {
   if (!draw) return;
@@ -404,6 +379,25 @@ async function ensureMap(): Promise<void> {
     });
 
     map.on('click', (event) => {
+      // 检查是否点击了围栏
+      if (!props.drawingMode && map) {
+        const features = map.queryRenderedFeatures(event.point, {
+          layers: ['gl-draw-polygon-fill-inactive.cold'],
+        });
+
+        if (features && features.length > 0) {
+          const feature = features[0];
+          const geofenceId = feature.properties?.geofenceId;
+          if (geofenceId) {
+            const geofence = props.geofences.find(g => g.id === geofenceId);
+            if (geofence) {
+              fitGeofenceBounds(geofence);
+              return;
+            }
+          }
+        }
+      }
+
       if (mapModel.expandedPath) {
         mapModel.expandedPath = '';
         renderMarkers();

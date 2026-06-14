@@ -73,7 +73,6 @@ function handleEditArea(): void {
     <template #footer>
       <div class="dialog-footer">
         <el-button @click="handleClose">取消</el-button>
-        <el-button v-if="geofence" @click="handleEditArea">编辑区域</el-button>
         <el-button type="primary" @click="handleConfirm">
           {{ geofence ? '保存' : '下一步：绘制区域' }}
         </el-button>
