@@ -70,7 +70,7 @@ let geofencePolygonIds: Map<string, string> = new Map();
 function renderGeofences(): void {
   if (!map || !draw) return;
 
-  // 清除现有围栏
+  // 清除 Draw 中的围栏
   geofencePolygonIds.forEach((drawId) => {
     try {
       draw.delete(drawId);
@@ -80,31 +80,35 @@ function renderGeofences(): void {
   });
   geofencePolygonIds.clear();
 
-  // 渲染所有围栏
-  for (const geofence of props.geofences) {
-    if (geofence.coordinates.length < 3) continue;
+  // 使用原生 Mapbox GL 图层显示围栏
+  const geojson = {
+    type: 'FeatureCollection',
+    features: props.geofences
+      .filter(g => g.coordinates.length >= 3)
+      .map(geofence => ({
+        type: 'Feature',
+        id: geofence.id,
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              ...geofence.coordinates.map(coord => [coord.longitude, coord.latitude]),
+              [geofence.coordinates[0].longitude, geofence.coordinates[0].latitude], // 闭合
+            ],
+          ],
+        },
+        properties: {
+          id: geofence.id,
+          color: geofence.color,
+          name: geofence.name,
+        },
+      })),
+  };
 
-    const coordinates = geofence.coordinates.map(coord => [coord.longitude, coord.latitude]);
-    coordinates.push([geofence.coordinates[0].longitude, geofence.coordinates[0].latitude]); // 闭合多边形
-
-    const polygon = {
-      type: 'Feature',
-      geometry: {
-        type: 'Polygon',
-        coordinates: [coordinates],
-      },
-      properties: {},
-    };
-
-    const featureIds = draw.add(polygon);
-    if (featureIds && featureIds.length > 0) {
-      const featureId = featureIds[0];
-      geofencePolygonIds.set(geofence.id, featureId);
-
-      // 使用 setFeatureProperty 设置自定义属性
-      draw.setFeatureProperty(featureId, 'user_geofenceId', geofence.id);
-      draw.setFeatureProperty(featureId, 'user_color', geofence.color);
-    }
+  // 更新数据源
+  const source = map.getSource('geofences-source') as mapboxgl.GeoJSONSource;
+  if (source) {
+    source.setData(geojson as any);
   }
 }
 
@@ -118,16 +122,44 @@ function startDrawingGeofence(geofenceId: string): void {
 function startEditingGeofence(geofenceId: string): void {
   if (!draw) return;
 
-  const drawId = geofencePolygonIds.get(geofenceId);
-  if (!drawId) return;
+  const geofence = props.geofences.find(g => g.id === geofenceId);
+  if (!geofence || geofence.coordinates.length < 3) return;
 
-  draw.changeMode('direct_select', { featureId: drawId });
+  // 将围栏添加到 Draw 进行编辑
+  const coordinates = geofence.coordinates.map(coord => [coord.longitude, coord.latitude]);
+  coordinates.push([geofence.coordinates[0].longitude, geofence.coordinates[0].latitude]); // 闭合
+
+  const polygon = {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [coordinates],
+    },
+    properties: {},
+  };
+
+  const featureIds = draw.add(polygon);
+  if (featureIds && featureIds.length > 0) {
+    const featureId = featureIds[0];
+    geofencePolygonIds.set(geofenceId, featureId);
+    draw.changeMode('direct_select', { featureId });
+  }
 }
 
 function stopDrawingOrEditing(): void {
   if (!draw) return;
 
   draw.changeMode('simple_select');
+
+  // 清除 Draw 中的所有围栏
+  geofencePolygonIds.forEach((drawId) => {
+    try {
+      draw.delete(drawId);
+    } catch (e) {
+      // 忽略删除错误
+    }
+  });
+  geofencePolygonIds.clear();
 }
 
 // 获取当前编辑的坐标
@@ -193,20 +225,10 @@ function handleDrawCreate(event: any): void {
     return;
   }
 
-  // 新建围栏时，将临时绘制的多边形保存到围栏ID映射中
+  // 新建围栏时，保存映射关系
   if (props.editingGeofenceId) {
-    const geofence = props.geofences.find(g => g.id === props.editingGeofenceId);
-
-    // 使用 setFeatureProperty 设置自定义属性
-    draw.setFeatureProperty(feature.id, 'user_geofenceId', props.editingGeofenceId);
-    if (geofence) {
-      draw.setFeatureProperty(feature.id, 'user_color', geofence.color);
-    }
-
-    // 保存映射关系
     geofencePolygonIds.set(props.editingGeofenceId, feature.id);
 
-    // 不自动保存，等待用户点击面板的确认按钮
     // 切换到选择模式，允许继续编辑
     draw.changeMode('simple_select', { featureIds: [feature.id] });
   }
@@ -315,6 +337,9 @@ async function ensureMap(): Promise<void> {
     draw = new MapboxDraw({
       displayControlsDefault: false,
       controls: {},
+      clickBuffer: 0, // 禁用点击缓冲
+      touchBuffer: 0, // 禁用触摸缓冲
+      defaultMode: 'simple_select',
       styles: [
         // 自定义样式以支持不同颜色
         {
@@ -373,9 +398,56 @@ async function ensureMap(): Promise<void> {
 
     map.addControl(draw as any);
 
+    // 添加围栏图层
+    map.on('load', () => {
+      if (!map) return;
+
+      // 添加数据源
+      map.addSource('geofences-source', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
+      });
+
+      // 添加填充图层
+      map.addLayer({
+        id: 'geofences-fill',
+        type: 'fill',
+        source: 'geofences-source',
+        paint: {
+          'fill-color': ['get', 'color'],
+          'fill-opacity': 0.3,
+        },
+      });
+
+      // 添加边框图层
+      map.addLayer({
+        id: 'geofences-line',
+        type: 'line',
+        source: 'geofences-source',
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': 2,
+        },
+      });
+
+      // 初始渲染围栏
+      renderGeofences();
+    });
+
     // 监听绘制事件
     map.on('draw.create', handleDrawCreate);
     map.on('draw.update', handleDrawUpdate);
+
+    // 阻止非编辑模式下选择围栏
+    map.on('draw.selectionchange', (event: any) => {
+      if (!props.drawingMode && event.features.length > 0) {
+        // 取消选择
+        draw.changeMode('simple_select');
+      }
+    });
 
     map.on('mousemove', (event) => {
       mapModel.mouseCoord = {
@@ -388,12 +460,12 @@ async function ensureMap(): Promise<void> {
       // 检查是否点击了围栏（非编辑模式）
       if (!props.drawingMode && map) {
         const features = map.queryRenderedFeatures(event.point, {
-          layers: ['gl-draw-polygon-fill-inactive', 'gl-draw-polygon-stroke-inactive'],
+          layers: ['geofences-fill', 'geofences-line'],
         });
 
         if (features && features.length > 0) {
           const feature = features[0];
-          const geofenceId = feature.properties?.user_geofenceId;
+          const geofenceId = feature.properties?.id;
           if (geofenceId) {
             const geofence = props.geofences.find(g => g.id === geofenceId);
             if (geofence) {
