@@ -140,6 +140,9 @@ function startDrawingGeofence(geofenceId: string): void {
 function startEditingGeofence(geofenceId: string): void {
   if (!draw) return;
 
+  // 重置保存标志位
+  isSavingEdit = false;
+
   const drawId = geofencePolygonIds.get(geofenceId);
   if (!drawId) return;
 
@@ -385,7 +388,7 @@ async function ensureMap(): Promise<void> {
                 // 延迟重置标志位，等待 props 更新
                 setTimeout(() => {
                   isSavingEdit = false;
-                }, 100);
+                }, 500);
                 return;
               }
             }

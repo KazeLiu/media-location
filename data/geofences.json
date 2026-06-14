@@ -1,5 +1,5 @@
 {
-  "enabled": false,
+  "enabled": true,
   "geofences": [
     {
       "id": "22a6d682-b911-4cea-ba44-708229c62782",
@@ -7,8 +7,8 @@
       "color": "#FF5733",
       "coordinates": [
         {
-          "longitude": 116.31509513565061,
-          "latitude": 39.987687964752205
+          "longitude": 116.39460356134033,
+          "latitude": 40.023861567443845
         },
         {
           "longitude": 116.50128065835568,
@@ -32,7 +32,7 @@
         }
       ],
       "createdAt": "2026-06-14T13:05:46.177Z",
-      "updatedAt": "2026-06-14T13:12:21.318Z"
+      "updatedAt": "2026-06-14T13:19:47.922Z"
     }
   ]
 }

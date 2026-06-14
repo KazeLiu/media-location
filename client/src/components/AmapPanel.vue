@@ -156,6 +156,15 @@ async function ensureMap(): Promise<void> {
       if (props.drawingMode && props.editingGeofenceId && polygonEditor && currentEditingPolygon && !isSavingEdit) {
         const geofence = props.geofences.find(g => g.id === props.editingGeofenceId);
         if (geofence && geofence.coordinates.length > 0) {
+          // 检查点击是否在多边形上或控制点上
+          const pixel = event.pixel;
+          const features = map.getFeaturesAtPixel?.(pixel);
+
+          // 如果点击的是多边形本身或控制点，不保存
+          if (features && features.length > 0) {
+            return;
+          }
+
           // 这是编辑模式，保存当前编辑
           const path = currentEditingPolygon.getPath();
           if (path.length >= 3) {
@@ -169,7 +178,7 @@ async function ensureMap(): Promise<void> {
             // 延迟重置标志位，等待 props 更新
             setTimeout(() => {
               isSavingEdit = false;
-            }, 100);
+            }, 500);
           }
           return;
         }
@@ -299,6 +308,9 @@ function startDrawingGeofence(geofenceId: string): void {
 
 function startEditingGeofence(geofenceId: string): void {
   if (!map) return;
+
+  // 重置保存标志位
+  isSavingEdit = false;
 
   const geofence = props.geofences.find(g => g.id === geofenceId);
   if (!geofence || geofence.coordinates.length < 3) return;
