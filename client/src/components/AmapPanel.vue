@@ -78,6 +78,7 @@ let markerDragState: {
 } | null = null;
 
 let geofencePolygons: Map<string, any> = new Map();
+let mouseTool: any = null;
 let polygonEditor: any = null;
 let currentEditingPolygon: any = null;
 
@@ -119,6 +120,7 @@ async function ensureMap(): Promise<void> {
       'AMap.Scale',
       'AMap.AutoComplete',
       'AMap.PlaceSearch',
+      'AMap.MouseTool',
       'AMap.PolygonEditor',
     ]);
 
@@ -228,36 +230,44 @@ function startDrawingGeofence(geofenceId: string): void {
 
   const AMap = (window as any).AMap;
 
-  if (!polygonEditor) {
-    polygonEditor = new AMap.PolygonEditor(map);
-
-    polygonEditor.on('end', (event: any) => {
-      const path = event.target.getPath();
-      if (path.length < 3) {
-        ElMessage.error('多边形至少需要3个顶点');
-        return;
-      }
-
-      const wgs84Coords = path.map((lngLat: any) => {
-        const wgs = gcj02ToWgs84(lngLat.lng, lngLat.lat);
-        return { longitude: wgs.lng, latitude: wgs.lat };
-      });
-
-      emit('geofenceDrawn', geofenceId, wgs84Coords);
-      stopDrawingOrEditing();
-    });
+  if (!mouseTool) {
+    mouseTool = new AMap.MouseTool(map);
   }
 
-  const polygon = new AMap.Polygon({
-    fillColor: props.geofences.find(g => g.id === geofenceId)?.color || '#FF5733',
+  const geofence = props.geofences.find(g => g.id === geofenceId);
+  const color = geofence?.color || '#FF5733';
+
+  mouseTool.polygon({
+    fillColor: color,
     fillOpacity: 0.3,
-    strokeColor: props.geofences.find(g => g.id === geofenceId)?.color || '#FF5733',
+    strokeColor: color,
     strokeWeight: 2,
   });
 
-  currentEditingPolygon = polygon;
-  polygonEditor.setTarget(polygon);
-  polygonEditor.open();
+  // 监听绘制完成
+  mouseTool.on('draw', (event: any) => {
+    const polygon = event.obj;
+    const path = polygon.getPath();
+
+    if (path.length < 3) {
+      ElMessage.error('多边形至少需要3个顶点');
+      map?.remove(polygon);
+      return;
+    }
+
+    const wgs84Coords = path.map((lngLat: any) => {
+      const wgs = gcj02ToWgs84(lngLat.lng, lngLat.lat);
+      return { longitude: wgs.lng, latitude: wgs.lat };
+    });
+
+    emit('geofenceDrawn', geofenceId, wgs84Coords);
+
+    // 清理绘制的临时多边形
+    map?.remove(polygon);
+    mouseTool.close(true);
+  });
+
+  ElMessage.info('在地图上点击绘制围栏，双击完成');
 }
 
 function startEditingGeofence(geofenceId: string): void {
@@ -273,31 +283,7 @@ function startEditingGeofence(geofenceId: string): void {
     return new AMap.LngLat(gcj.lng, gcj.lat);
   });
 
-  if (!polygonEditor) {
-    polygonEditor = new AMap.PolygonEditor(map);
-
-    polygonEditor.on('end', () => {
-      const path = polygonEditor.getTarget().getPath();
-      if (path.length < 3) {
-        ElMessage.error('多边形至少需要3个顶点');
-        return;
-      }
-
-      const wgs84Coords = path.map((lngLat: any) => {
-        const wgs = gcj02ToWgs84(lngLat.lng, lngLat.lat);
-        return { longitude: wgs.lng, latitude: wgs.lat };
-      });
-
-      emit('geofenceEdited', geofenceId, wgs84Coords);
-      stopDrawingOrEditing();
-    });
-  }
-
-  const existingPolygon = geofencePolygons.get(geofenceId);
-  if (existingPolygon) {
-    existingPolygon.setMap(null);
-  }
-
+  // 创建多边形
   const polygon = new AMap.Polygon({
     path: gcj02Path,
     fillColor: geofence.color,
@@ -306,18 +292,48 @@ function startEditingGeofence(geofenceId: string): void {
     strokeWeight: 2,
   });
 
+  map.add(polygon);
   currentEditingPolygon = polygon;
+
+  // 创建编辑器
+  if (!polygonEditor) {
+    polygonEditor = new AMap.PolygonEditor(map);
+  }
+
   polygonEditor.setTarget(polygon);
   polygonEditor.open();
+
+  // 监听编辑结束
+  polygonEditor.on('end', () => {
+    const path = polygon.getPath();
+    if (path.length < 3) {
+      ElMessage.error('多边形至少需要3个顶点');
+      return;
+    }
+
+    const wgs84Coords = path.map((lngLat: any) => {
+      const wgs = gcj02ToWgs84(lngLat.lng, lngLat.lat);
+      return { longitude: wgs.lng, latitude: wgs.lat };
+    });
+
+    emit('geofenceEdited', geofenceId, wgs84Coords);
+    stopDrawingOrEditing();
+  });
+
+  ElMessage.info('拖动顶点编辑围栏，完成后点击"保存"');
 }
 
 function stopDrawingOrEditing(): void {
+  if (mouseTool) {
+    mouseTool.close(true);
+  }
+
   if (polygonEditor) {
     polygonEditor.close();
   }
 
   if (currentEditingPolygon) {
-    currentEditingPolygon.setMap(null);
+    map?.remove(currentEditingPolygon);
     currentEditingPolygon = null;
   }
 
