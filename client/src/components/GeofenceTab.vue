@@ -186,6 +186,7 @@ function handleEditArea(): void {
   display: flex;
   gap: 8px;
   align-items: center;
+  justify-content: space-between;
 }
 
 .drawing-status {
@@ -194,15 +195,26 @@ function handleEditArea(): void {
   color: var(--el-color-primary);
   border-radius: 4px;
   font-size: 14px;
-  animation: pulse 2s ease-in-out infinite;
+  font-weight: 500;
+  animation: pulse 1.2s ease-in-out infinite;
+  box-shadow: 0 0 0 0 var(--el-color-primary);
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0% {
     opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.4);
   }
   50% {
-    opacity: 0.6;
+    opacity: 0.8;
+    transform: scale(1.05);
+    box-shadow: 0 0 0 4px rgba(64, 158, 255, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0);
   }
 }
 
