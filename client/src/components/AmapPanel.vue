@@ -859,6 +859,18 @@ function renderClusterMarker(context: any): void {
   div.textContent = String(count);
   div.style.cursor = 'pointer';
 
+  // 检查当前聚合点是否应该是激活状态
+  if (clusterModel.listVisible && clusterModel.currentClusterKey) {
+    const position = marker.getPosition();
+    if (position) {
+      const clusterKey = `${position.lng.toFixed(5)}_${position.lat.toFixed(5)}_${count}`;
+      if (clusterKey === clusterModel.currentClusterKey) {
+        div.classList.add('active');
+        clusterModel.activeClusterElement = div;
+      }
+    }
+  }
+
   context.marker.setContent(div);
   context.marker.setAnchor('center');
   context.marker.setOffset(new window.AMap.Pixel(0, 0));
