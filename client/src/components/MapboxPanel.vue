@@ -682,6 +682,63 @@ function updateClusterListAfterChange(): void {
 
   // 更新列表内容
   clusterModel.listItems = itemsInCluster;
+
+  // 重新根据位置找到聚合点并恢复高亮
+  restoreClusterHighlight();
+}
+
+// 根据存储的位置重新找到聚合点并恢复高亮
+function restoreClusterHighlight(): void {
+  if (!map || !clusterModel.currentClusterLngLat) {
+    return;
+  }
+
+  console.log('[ClusterHighlight] Attempting to restore highlight at position:', clusterModel.currentClusterLngLat);
+
+  // 将地理坐标转换为屏幕坐标
+  const point = map.project([clusterModel.currentClusterLngLat.lng, clusterModel.currentClusterLngLat.lat]);
+
+  // 查询该位置的聚合点
+  const features = map.queryRenderedFeatures([point.x, point.y], {
+    layers: ['clusters'],
+  });
+
+  if (!features || features.length === 0) {
+    console.log('[ClusterHighlight] No cluster found at stored position, cluster may have dissolved');
+    return;
+  }
+
+  const newClusterId = features[0].properties?.cluster_id;
+  if (newClusterId === undefined) return;
+
+  // 如果 clusterId 变了，需要移除旧的高亮并设置新的
+  if (clusterModel.currentClusterId !== newClusterId) {
+    console.log('[ClusterHighlight] cluster_id changed from', clusterModel.currentClusterId, 'to', newClusterId);
+
+    // 移除旧的高亮
+    if (clusterModel.currentClusterId !== null) {
+      map.removeFeatureState({
+        source: 'media-points',
+        id: clusterModel.currentClusterId,
+      });
+      console.log('[ClusterHighlight] Removed highlight from old cluster:', clusterModel.currentClusterId);
+    }
+
+    // 设置新的高亮
+    map.setFeatureState(
+      {
+        source: 'media-points',
+        id: newClusterId,
+      },
+      { active: true }
+    );
+    console.log('[ClusterHighlight] Set highlight on new cluster:', newClusterId);
+
+    // 更新记录的 clusterId
+    clusterModel.currentClusterId = newClusterId;
+  } else {
+    console.log('[ClusterHighlight] cluster_id unchanged, still:', newClusterId);
+  }
 }
 
 function handleDragOver(event: DragEvent): void {
@@ -990,11 +1047,8 @@ function updateMediaPointsSource(): void {
 
   // 如果正在拖拽，不要更新数据源
   if (mapModel.draggingMarkerId) {
-    console.log('[Mapbox Debug] skipping updateMediaPointsSource because marker is being dragged, id:', mapModel.draggingMarkerId);
     return;
   }
-
-  console.log('[Mapbox Debug] updateMediaPointsSource called');
 
   const source = map.getSource('media-points') as mapboxgl.GeoJSONSource;
   if (!source) return;
@@ -1037,7 +1091,6 @@ function updateCustomMarkers(): void {
 
   // 如果正在拖拽，不要重新创建 Marker
   if (mapModel.draggingMarkerId) {
-    console.log('[Mapbox Debug] skipping updateCustomMarkers because marker is being dragged, id:', mapModel.draggingMarkerId);
     return;
   }
 
@@ -1047,27 +1100,19 @@ function updateCustomMarkers(): void {
     updateMarkersTimer = null;
   }
 
-  console.log('[Mapbox Debug] updateCustomMarkers called, current markers count:', markers.length);
-
   // 获取当前地图视野范围
   const zoom = map.getZoom();
-
-  console.log('[Mapbox Debug] current zoom:', zoom, 'clusterMaxZoom: 16');
 
   // 获取所有媒体项
   const itemsWithGps = props.items.filter(
     (item) => item.hasGps && typeof item.longitude === 'number' && typeof item.latitude === 'number'
   );
 
-  console.log('[Mapbox Debug] items with GPS:', itemsWithGps.length);
-
   // 清理旧标记
   markers.forEach((marker) => {
     marker.remove();
   });
   markers = [];
-
-  console.log('[Mapbox Debug] cleared old markers, count before:', markers.length);
 
   // 获取当前视野内未聚合的点
   const features = map.querySourceFeatures('media-points', {
@@ -1076,8 +1121,6 @@ function updateCustomMarkers(): void {
 
   // 筛选出未聚合的点（没有 point_count 属性）
   const unclusteredFeatures = features.filter((feature: any) => !feature.properties.cluster);
-
-  console.log('[Mapbox Debug] unclustered features in view:', unclusteredFeatures.length);
 
   // 对 features 去重（querySourceFeatures 可能返回重复的点）
   const uniqueFeaturesMap = new Map<string, any>();
@@ -1089,7 +1132,6 @@ function updateCustomMarkers(): void {
   });
 
   const uniqueFeatures = Array.from(uniqueFeaturesMap.values());
-  console.log('[Mapbox Debug] unique unclustered features:', uniqueFeatures.length);
 
   // 为每个未聚合的点创建自定义 Marker
   uniqueFeatures.forEach((feature: any) => {
@@ -1102,8 +1144,6 @@ function updateCustomMarkers(): void {
 
     const expanded = isMapMarkerExpanded(mapModel.expandedPath, item.path);
     const markerContent = createMarkerContent(item, expanded);
-
-    console.log('[Mapbox Debug] creating marker for:', item.name, 'lng:', coordinates[0], 'lat:', coordinates[1]);
 
     const marker = new mapboxgl.Marker({
       element: markerContent,
@@ -1118,21 +1158,15 @@ function updateCustomMarkers(): void {
 
     markers.push(marker);
   });
-
-  console.log('[Mapbox Debug] created custom markers:', markers.length);
 }
 
 // 渲染非聚合的标记点
 function renderUnclusteredMarkers(): void {
   if (!map) return;
 
-  console.log('[Mapbox Debug] renderUnclusteredMarkers called');
-
   // 清理旧标记
   markers.forEach((marker) => marker.remove());
   markers = [];
-
-  console.log('[Mapbox Debug] cleared old markers');
 
   // 数据源更新后，会触发 'data' 事件，那时再更新自定义 Marker
 }
@@ -1198,15 +1232,11 @@ function handleClusterClick(e: any): void {
 }
 
 function createMarkerContent(item: MediaItem, expanded: boolean): HTMLElement {
-  console.log('[Mapbox Debug] createMarkerContent called for:', item.name, 'expanded:', expanded);
-
   const container = document.createElement('div');
   container.setAttribute('role', 'button');
   container.tabIndex = 0;
   container.className = `map-media-marker${item.path === props.selectedPath ? ' selected' : ''}${expanded ? ' expanded' : ''}`;
   container.title = item.name;
-
-  console.log('[Mapbox Debug] container className:', container.className);
 
   // 设置 z-index：展开或选中的标记点层级更高
   const zIndex = item.path === props.selectedPath || expanded ? 300 : 100;
@@ -1250,12 +1280,8 @@ function createMarkerContent(item: MediaItem, expanded: boolean): HTMLElement {
   bubble.className = 'marker-bubble';
   container.appendChild(bubble);
 
-  console.log('[Mapbox Debug] bubble created');
-
   const media = createMarkerMediaElement(item);
   bubble.appendChild(media);
-
-  console.log('[Mapbox Debug] media appended');
 
   if (shouldShowMapVideoPlayButton(item.mediaType, expanded)) {
     bubble.appendChild(createMarkerVideoPlayLink(item));
@@ -1273,8 +1299,6 @@ function createMarkerContent(item: MediaItem, expanded: boolean): HTMLElement {
   const pointer = document.createElement('span');
   pointer.className = 'marker-pointer';
   container.appendChild(pointer);
-
-  console.log('[Mapbox Debug] marker content complete, children:', container.children.length);
 
   return container;
   return container;
@@ -1365,7 +1389,6 @@ function beginMarkerDrag(item: MediaItem, element: HTMLElement, event: PointerEv
   const marker = markers.find(m => (m as any)._mediaItem?.id === item.id);
 
   if (!marker) {
-    console.warn('[Mapbox Debug] Marker not found for item:', item.id);
     return;
   }
 
@@ -1468,7 +1491,6 @@ function finishMarkerDragFromPointer(): void {
     clearTimeout(updateAfterDragTimer);
   }
   updateAfterDragTimer = window.setTimeout(() => {
-    console.log('[Mapbox Debug] updating after drag completed');
     updateMediaPointsSource();
     updateCustomMarkers();
     updateAfterDragTimer = null;
