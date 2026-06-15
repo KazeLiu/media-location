@@ -823,9 +823,9 @@ function renderMarkers(): void {
         return;
       }
 
-      // 生成聚合点的唯一标识（基于位置和数量）
+      // 生成聚合点的唯一标识（仅基于位置，不包含数量，以便拖拽后保持激活）
       const position = event.lnglat;
-      const clusterKey = `${position.lng.toFixed(5)}_${position.lat.toFixed(5)}_${items.length}`;
+      const clusterKey = `${position.lng.toFixed(5)}_${position.lat.toFixed(5)}`;
 
       // 获取被点击的聚合点 DOM 元素并高亮
       const clusterElement = event.marker?.getContent?.();
@@ -859,11 +859,11 @@ function renderClusterMarker(context: any): void {
   div.textContent = String(count);
   div.style.cursor = 'pointer';
 
-  // 检查当前聚合点是否应该是激活状态
+  // 检查当前聚合点是否应该是激活状态（仅比较位置，不比较数量）
   if (clusterModel.listVisible && clusterModel.currentClusterKey) {
     const position = marker.getPosition();
     if (position) {
-      const clusterKey = `${position.lng.toFixed(5)}_${position.lat.toFixed(5)}_${count}`;
+      const clusterKey = `${position.lng.toFixed(5)}_${position.lat.toFixed(5)}`;
       if (clusterKey === clusterModel.currentClusterKey) {
         div.classList.add('active');
         clusterModel.activeClusterElement = div;
