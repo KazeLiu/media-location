@@ -16,6 +16,7 @@ const props = withDefaults(
     editingGeofenceId: string;
     drawingMode: boolean;
     enableClickToCopy: boolean;
+    enableMarkerClustering: boolean;
   }>(),
   {
     amapSecurityCode: '',
@@ -24,6 +25,7 @@ const props = withDefaults(
     editingGeofenceId: '',
     drawingMode: false,
     enableClickToCopy: false,
+    enableMarkerClustering: false,
   },
 );
 
@@ -77,6 +79,7 @@ function handleGeofenceEdited(id: string, coords: GeofenceCoordinate[]): void {
     :editing-geofence-id="editingGeofenceId"
     :drawing-mode="drawingMode"
     :enable-click-to-copy="enableClickToCopy"
+    :enable-marker-clustering="enableMarkerClustering"
     @select="handleSelect"
     @place="handlePlace"
     @geofence-drawn="handleGeofenceDrawn"

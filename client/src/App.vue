@@ -35,6 +35,7 @@ const settingsModel = reactive({
     loadVideoContent: false,
     gpsWriteMode: 'xmp' as GpsWriteMode,
     enableClickToCopy: false,
+    enableMarkerClustering: false,
   },
 });
 
@@ -147,6 +148,9 @@ function applyConfig(config: AppConfig): void {
   settingsModel.config.libraryRoots = config.libraryRoots;
   settingsModel.config.backupBeforeWrite = config.backupBeforeWrite;
   settingsModel.config.loadVideoContent = config.loadVideoContent;
+  settingsModel.config.gpsWriteMode = config.gpsWriteMode;
+  settingsModel.config.enableClickToCopy = config.enableClickToCopy;
+  settingsModel.config.enableMarkerClustering = config.enableMarkerClustering;
 }
 
 function applyGeofenceConfig(config: GeofenceConfig): void {
@@ -688,6 +692,7 @@ onBeforeUnmount(clearMediaFilterTimer);
           :editing-geofence-id="geofenceModel.editingGeofenceId"
           :drawing-mode="geofenceModel.drawingMode"
           :enable-click-to-copy="settingsModel.config.enableClickToCopy"
+          :enable-marker-clustering="settingsModel.config.enableMarkerClustering"
           @select="handleSelectItem"
           @place="placeMedia"
           @ready="handleMapReady"

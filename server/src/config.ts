@@ -15,6 +15,7 @@ const DEFAULT_CONFIG: AppConfig = {
   loadVideoContent: false,
   gpsWriteMode: 'xmp',
   enableClickToCopy: false,
+  enableMarkerClustering: false, // 默认不启用聚合
 };
 
 export function getConfigPath(): string {
@@ -69,5 +70,6 @@ function normalizeConfig(input: Partial<AppConfig>): AppConfig {
     loadVideoContent: false,
     gpsWriteMode: (input.gpsWriteMode === 'exif' ? 'exif' : 'xmp'),
     enableClickToCopy: Boolean(input.enableClickToCopy),
+    enableMarkerClustering: Boolean(input.enableMarkerClustering),
   };
 }

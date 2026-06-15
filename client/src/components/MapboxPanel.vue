@@ -14,6 +14,7 @@ import { getMediaFileUrl, getMediaThumbnailUrl, writeClientLog } from '@/api';
 import { loadMapbox, mapboxgl } from '@/lib/mapbox';
 import { searchMapboxAddress, type MapboxSearchSuggestion } from '@/lib/mapboxSearch';
 import GeofenceEditPanel from './GeofenceEditPanel.vue';
+import ClusterItemList from './ClusterItemList.vue';
 import {
   getMapMarkerMediaMode,
   getNextExpandedPath,
@@ -301,6 +302,13 @@ const mapModel = reactive({
   searchSuggestions: [] as SearchSuggestion[],
 });
 
+// Cluster block: owns cluster list state
+const clusterModel = reactive({
+  listVisible: false,
+  listItems: [] as MediaItem[],
+  listPosition: null as { x: number; y: number } | null,
+});
+
 const mouseCoordText = computed(() => {
   if (!mapModel.mouseCoord) {
     return null;
@@ -402,7 +410,7 @@ async function ensureMap(): Promise<void> {
     map.on('load', () => {
       if (!map) return;
 
-      // 添加数据源
+      // 添加围栏数据源
       map.addSource('geofences-source', {
         type: 'geojson',
         data: {
@@ -411,7 +419,7 @@ async function ensureMap(): Promise<void> {
         },
       });
 
-      // 添加填充图层
+      // 添加围栏填充图层
       map.addLayer({
         id: 'geofences-fill',
         type: 'fill',
@@ -422,7 +430,7 @@ async function ensureMap(): Promise<void> {
         },
       });
 
-      // 添加边框图层
+      // 添加围栏边框图层
       map.addLayer({
         id: 'geofences-line',
         type: 'line',
@@ -433,8 +441,88 @@ async function ensureMap(): Promise<void> {
         },
       });
 
-      // 初始渲染围栏
+      // 添加媒体点位聚合数据源
+      map.addSource('media-points', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
+        cluster: true,
+        clusterMaxZoom: 16, // 最大聚合层级
+        clusterRadius: 60, // 聚合半径
+      });
+
+      // 添加聚合点圆形图层
+      map.addLayer({
+        id: 'clusters',
+        type: 'circle',
+        source: 'media-points',
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': '#409eff',
+          'circle-radius': 20,
+          'circle-stroke-width': 3,
+          'circle-stroke-color': '#ffffff',
+        },
+      });
+
+      // 添加聚合点数字图层
+      map.addLayer({
+        id: 'cluster-count',
+        type: 'symbol',
+        source: 'media-points',
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': '{point_count_abbreviated}',
+          'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+          'text-size': 14,
+        },
+        paint: {
+          'text-color': '#ffffff',
+        },
+      });
+
+      // 添加未聚合点的图层（使用 symbol 显示占位符，真正的渲染用 Marker）
+      map.addLayer({
+        id: 'unclustered-point',
+        type: 'circle',
+        source: 'media-points',
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-radius': 0, // 隐藏圆圈，只用来触发事件
+          'circle-opacity': 0,
+        },
+      });
+
+      // 点击聚合点显示列表
+      map.on('click', 'clusters', handleClusterClick);
+
+      // 监听未聚合点的渲染，使用自定义 Marker
+      map.on('data', (e) => {
+        if (e.sourceId === 'media-points' && e.isSourceLoaded) {
+          updateCustomMarkers();
+        }
+      });
+
+      // 监听 zoom 变化，关闭聚合列表
+      map.on('zoomend', () => {
+        if (clusterModel.listVisible) {
+          handleCloseClusterList();
+        }
+      });
+
+      // 鼠标悬停样式
+      map.on('mouseenter', 'clusters', () => {
+        if (map) map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'clusters', () => {
+        if (map) map.getCanvas().style.cursor = '';
+      });
+
+      // 初始渲染围栏和标记
       renderGeofences();
+      updateMediaPointsSource();
     });
 
     // 监听绘制事件
@@ -510,6 +598,13 @@ async function ensureMap(): Promise<void> {
     mapModel.hint = message;
     emit('error', message);
   }
+}
+
+// 关闭聚合列表
+function handleCloseClusterList(): void {
+  clusterModel.listVisible = false;
+  clusterModel.listItems = [];
+  clusterModel.listPosition = null;
 }
 
 function handleDragOver(event: DragEvent): void {
@@ -803,25 +898,8 @@ function renderMarkers(): void {
   markers.forEach((marker) => marker.remove());
   markers = [];
 
-  const currentMap = map; // 类型守卫：确保后续代码使用的是非 null 的 map
-  props.items
-    .filter((item) => item.hasGps && typeof item.longitude === 'number' && typeof item.latitude === 'number')
-    .forEach((item) => {
-      // Mapbox 使用 WGS84，数据库存的就是 WGS84，直接使用
-      const expanded = isMapMarkerExpanded(mapModel.expandedPath, item.path);
-      const markerContent = createMarkerContent(item, expanded);
-
-      const marker = new mapboxgl.Marker({
-        element: markerContent,
-        anchor: 'bottom',
-        draggable: false,
-        offset: [0, 0],
-      })
-        .setLngLat([item.longitude as number, item.latitude as number])
-        .addTo(currentMap);
-
-      markers.push(marker);
-    });
+  // 更新聚合数据源
+  updateMediaPointsSource();
 
   const selected = props.items.find((item) => item.path === props.selectedPath);
   if (selected?.hasGps && typeof selected.longitude === 'number' && typeof selected.latitude === 'number') {
@@ -829,24 +907,158 @@ function renderMarkers(): void {
   }
 }
 
+// 更新媒体点位数据源
+function updateMediaPointsSource(): void {
+  if (!map) return;
+
+  const source = map.getSource('media-points') as mapboxgl.GeoJSONSource;
+  if (!source) return;
+
+  const itemsWithGps = props.items.filter(
+    (item) => item.hasGps && typeof item.longitude === 'number' && typeof item.latitude === 'number'
+  );
+
+  // 构建 GeoJSON 数据
+  const geojson = {
+    type: 'FeatureCollection',
+    features: itemsWithGps.map((item) => ({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: [item.longitude as number, item.latitude as number],
+      },
+      properties: {
+        id: item.id,
+        path: item.path,
+        name: item.name,
+        mediaType: item.mediaType,
+        gpsSource: item.gpsSource,
+      },
+    })),
+  };
+
+  source.setData(geojson as any);
+
+  // 渲染非聚合的标记点（使用自定义 Marker）
+  renderUnclusteredMarkers();
+}
+
+// 更新自定义 Marker（未聚合的点）
+function updateCustomMarkers(): void {
+  if (!map) return;
+
+  console.log('[Mapbox Debug] updateCustomMarkers called');
+
+  // 获取当前地图视野范围
+  const zoom = map.getZoom();
+
+  console.log('[Mapbox Debug] current zoom:', zoom, 'clusterMaxZoom: 16');
+
+  // 获取所有媒体项
+  const itemsWithGps = props.items.filter(
+    (item) => item.hasGps && typeof item.longitude === 'number' && typeof item.latitude === 'number'
+  );
+
+  console.log('[Mapbox Debug] items with GPS:', itemsWithGps.length);
+
+  // 清理旧标记
+  markers.forEach((marker) => marker.remove());
+  markers = [];
+
+  // 放大层级才显示自定义标记
+  if (zoom > 16) {
+    // 为每个点创建自定义 Marker
+    itemsWithGps.forEach((item) => {
+      const expanded = isMapMarkerExpanded(mapModel.expandedPath, item.path);
+      const markerContent = createMarkerContent(item, expanded);
+
+      console.log('[Mapbox Debug] creating marker for:', item.name, 'element:', markerContent);
+
+      const marker = new mapboxgl.Marker({
+        element: markerContent,
+        anchor: 'bottom',
+        draggable: false,
+      })
+        .setLngLat([item.longitude as number, item.latitude as number])
+        .addTo(map);
+
+      markers.push(marker);
+    });
+
+    console.log('[Mapbox Debug] created custom markers:', markers.length);
+  } else {
+    console.log('[Mapbox Debug] zoom <= 16, showing clusters only');
+  }
+}
+
+// 渲染非聚合的标记点
+function renderUnclusteredMarkers(): void {
+  if (!map) return;
+
+  console.log('[Mapbox Debug] renderUnclusteredMarkers called');
+
+  // 清理旧标记
+  markers.forEach((marker) => marker.remove());
+  markers = [];
+
+  console.log('[Mapbox Debug] cleared old markers');
+
+  // 数据源更新后，会触发 'data' 事件，那时再更新自定义 Marker
+}
+
+// 处理聚合点点击事件
+function handleClusterClick(e: any): void {
+  if (!map) return;
+
+  const features = map.queryRenderedFeatures(e.point, {
+    layers: ['clusters'],
+  });
+
+  if (!features || features.length === 0) return;
+
+  const clusterId = features[0].properties?.cluster_id;
+  if (clusterId === undefined) return;
+
+  const source = map.getSource('media-points') as mapboxgl.GeoJSONSource;
+
+  // 获取聚合点内的所有点
+  (source as any).getClusterLeaves(clusterId, Infinity, 0, (err: any, clusterFeatures: any[]) => {
+    if (err || !clusterFeatures) return;
+
+    // 提取媒体项
+    const items = clusterFeatures
+      .map((feature) => {
+        const properties = feature.properties;
+        if (!properties) return null;
+
+        return props.items.find((item) => item.id === properties.id);
+      })
+      .filter(Boolean) as MediaItem[];
+
+    if (items.length === 0) return;
+
+    // 显示列表
+    clusterModel.listItems = items;
+    clusterModel.listPosition = { x: e.point.x, y: e.point.y };
+    clusterModel.listVisible = true;
+  });
+}
+
 function createMarkerContent(item: MediaItem, expanded: boolean): HTMLElement {
+  console.log('[Mapbox Debug] createMarkerContent called for:', item.name, 'expanded:', expanded);
+
   const container = document.createElement('div');
   container.setAttribute('role', 'button');
   container.tabIndex = 0;
   container.className = `map-media-marker${item.path === props.selectedPath ? ' selected' : ''}${expanded ? ' expanded' : ''}`;
   container.title = item.name;
 
+  console.log('[Mapbox Debug] container className:', container.className);
+
   // 设置 z-index：展开或选中的标记点层级更高
   const zIndex = item.path === props.selectedPath || expanded ? 300 : 100;
   container.style.zIndex = String(zIndex);
 
-  // 重置所有可能影响定位的样式
-  container.style.position = 'absolute';
-  container.style.left = '0';
-  container.style.top = '0';
-  container.style.transform = 'none';
-  container.style.margin = '0';
-  container.style.padding = '0 0 12px';
   container.addEventListener('pointerdown', (event) => {
     beginMarkerDrag(item, container, event);
   });
@@ -885,8 +1097,12 @@ function createMarkerContent(item: MediaItem, expanded: boolean): HTMLElement {
   bubble.className = 'marker-bubble';
   container.appendChild(bubble);
 
+  console.log('[Mapbox Debug] bubble created');
+
   const media = createMarkerMediaElement(item);
   bubble.appendChild(media);
+
+  console.log('[Mapbox Debug] media appended');
 
   if (shouldShowMapVideoPlayButton(item.mediaType, expanded)) {
     bubble.appendChild(createMarkerVideoPlayLink(item));
@@ -905,6 +1121,9 @@ function createMarkerContent(item: MediaItem, expanded: boolean): HTMLElement {
   pointer.className = 'marker-pointer';
   container.appendChild(pointer);
 
+  console.log('[Mapbox Debug] marker content complete, children:', container.children.length);
+
+  return container;
   return container;
 }
 
@@ -1202,6 +1421,14 @@ onBeforeUnmount(() => {
       :coordinates="getCurrentEditingCoordinates()"
       @confirm="handleConfirmEdit"
       @cancel="handleCancelEdit"
+    />
+
+    <ClusterItemList
+      :visible="clusterModel.listVisible"
+      :items="clusterModel.listItems"
+      :position="clusterModel.listPosition"
+      :fixed-position="true"
+      @close="handleCloseClusterList"
     />
 
     <el-tag class="map-hint" effect="light">{{ mapModel.hint }}</el-tag>

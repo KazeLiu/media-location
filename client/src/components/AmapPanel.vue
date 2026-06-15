@@ -14,6 +14,7 @@ import {
 import { getMediaFileUrl, getMediaThumbnailUrl, writeClientLog } from '@/api';
 import { loadAmap, loadAmapPlugins } from '@/lib/amap';
 import GeofenceEditPanel from './GeofenceEditPanel.vue';
+import ClusterItemList from './ClusterItemList.vue';
 import { formatAmapSuggestions, normalizeAmapLngLat, type AmapSearchSuggestion } from '@/lib/amapSearch';
 import {
   getMapMarkerMediaMode,
@@ -40,6 +41,7 @@ const props = withDefaults(
     editingGeofenceId: string;
     drawingMode: boolean;
     enableClickToCopy: boolean;
+    enableMarkerClustering: boolean;
   }>(),
   {
     amapSecurityCode: '',
@@ -47,6 +49,7 @@ const props = withDefaults(
     editingGeofenceId: '',
     drawingMode: false,
     enableClickToCopy: false,
+    enableMarkerClustering: false,
   },
 );
 
@@ -68,6 +71,7 @@ let standardLayer: any = null;
 let satelliteLayer: any = null;
 let roadNetLayer: any = null;
 let markers: any[] = [];
+let markerCluster: any = null;
 let searchMarker: any = null;
 let restoreMapDragTimer: number | null = null;
 let markerDragState: {
@@ -100,6 +104,15 @@ const mapModel = reactive({
   suppressMarkerClickUntil: 0,
 });
 
+// Cluster block: owns cluster list state
+const clusterModel = reactive({
+  listVisible: false,
+  listItems: [] as MediaItem[],
+  listPosition: null as { x: number; y: number } | null,
+  currentClusterKey: '', // 当前聚合点的唯一标识（用于追踪）
+  activeClusterElement: null as HTMLElement | null, // 当前激活的聚合点 DOM 元素
+});
+
 const mouseCoordText = computed(() => {
   if (!mapModel.mouseCoord) {
     return null;
@@ -126,6 +139,7 @@ async function ensureMap(): Promise<void> {
       'AMap.PlaceSearch',
       'AMap.MouseTool',
       'AMap.PolygonEditor',
+      'AMap.MarkerCluster',
     ]);
 
     map = new AMap.Map(mapEl.value, {
@@ -160,8 +174,22 @@ async function ensureMap(): Promise<void> {
 
       clearSearchMarker();
 
+      // 检查是否点击了聚合点
+      const target = event.originEvent?.target;
+      if (target && target.classList && target.classList.contains('cluster-marker')) {
+        // 聚合点点击由其自己的事件处理
+        return;
+      }
+
       if (props.enableClickToCopy) {
         void copyLngLat(event.lnglat.lng, event.lnglat.lat);
+      }
+    });
+
+    // 监听 zoom 变化，关闭聚合列表
+    map.on('zoomend', () => {
+      if (clusterModel.listVisible) {
+        handleCloseClusterList();
       }
     });
 
@@ -706,16 +734,33 @@ function renderMarkers(): void {
     return;
   }
 
+  // 清理旧的标记和聚合
   markers.forEach((marker) => marker.remove());
   markers = [];
 
-  props.items
-    .filter((item) => item.hasGps && typeof item.longitude === 'number' && typeof item.latitude === 'number')
-    .forEach((item) => {
+  if (markerCluster) {
+    markerCluster.setMap(null);
+    markerCluster = null;
+  }
+
+  // 清除聚合点高亮
+  if (clusterModel.activeClusterElement) {
+    clusterModel.activeClusterElement.classList.remove('active');
+    clusterModel.activeClusterElement = null;
+  }
+
+  const itemsWithGps = props.items.filter(
+    (item) => item.hasGps && typeof item.longitude === 'number' && typeof item.latitude === 'number'
+  );
+
+  // 如果不启用聚合，使用旧的渲染方式
+  if (!props.enableMarkerClustering) {
+    itemsWithGps.forEach((item) => {
       const point = wgs84ToGcj02(item.longitude as number, item.latitude as number);
       const expanded = isMapMarkerExpanded(mapModel.expandedPath, item.path);
       let marker: any = null;
       const markerContent = createMarkerContent(item, expanded, () => marker);
+
       marker = new window.AMap.Marker({
         position: [point.lng, point.lat],
         content: markerContent,
@@ -729,11 +774,113 @@ function renderMarkers(): void {
       markers.push(marker);
     });
 
+    const selected = props.items.find((item) => item.path === props.selectedPath);
+    if (selected?.hasGps && typeof selected.longitude === 'number' && typeof selected.latitude === 'number') {
+      const point = wgs84ToGcj02(selected.longitude, selected.latitude);
+      map.setCenter([point.lng, point.lat]);
+    }
+    return;
+  }
+
+  // 启用聚合：创建聚合数据点
+  const clusterData = itemsWithGps.map((item) => {
+    const point = wgs84ToGcj02(item.longitude as number, item.latitude as number);
+    return {
+      lnglat: [point.lng, point.lat],
+      weight: 1,
+      item: item, // 存储媒体项数据
+    };
+  });
+
+  // 创建聚合实例
+  if (clusterData.length > 0) {
+    markerCluster = new window.AMap.MarkerCluster(map, clusterData, {
+      gridSize: 60,
+      maxZoom: 16,
+      renderClusterMarker: renderClusterMarker,
+      renderMarker: renderSingleMarker,
+    });
+
+    // 监听聚合点点击事件
+    markerCluster.on('click', (event: any) => {
+      // 移除之前的高亮
+      if (clusterModel.activeClusterElement) {
+        clusterModel.activeClusterElement.classList.remove('active');
+      }
+
+      // 直接从 event.clusterData 获取数据（这是高德提供的聚合数据）
+      const clusterData = event.clusterData;
+      if (!clusterData || !Array.isArray(clusterData)) {
+        return;
+      }
+
+      // 从 clusterData 中提取媒体项
+      const items = clusterData
+        .map((data: any) => data.item)
+        .filter(Boolean) as MediaItem[];
+
+      if (items.length === 0) {
+        return;
+      }
+
+      // 生成聚合点的唯一标识（基于位置和数量）
+      const position = event.lnglat;
+      const clusterKey = `${position.lng.toFixed(5)}_${position.lat.toFixed(5)}_${items.length}`;
+
+      // 获取被点击的聚合点 DOM 元素并高亮
+      const clusterElement = event.marker?.getContent?.();
+      if (clusterElement && clusterElement.classList) {
+        clusterElement.classList.add('active');
+        clusterModel.activeClusterElement = clusterElement;
+      }
+
+      // 显示列表
+      clusterModel.listItems = items;
+      clusterModel.listPosition = null;
+      clusterModel.currentClusterKey = clusterKey;
+      clusterModel.listVisible = true;
+    });
+  }
+
   const selected = props.items.find((item) => item.path === props.selectedPath);
   if (selected?.hasGps && typeof selected.longitude === 'number' && typeof selected.latitude === 'number') {
     const point = wgs84ToGcj02(selected.longitude, selected.latitude);
     map.setCenter([point.lng, point.lat]);
   }
+}
+
+// 渲染聚合点标记
+function renderClusterMarker(context: any): void {
+  const count = context.count;
+  const marker = context.marker;
+
+  const div = document.createElement('div');
+  div.className = 'cluster-marker';
+  div.textContent = String(count);
+  div.style.cursor = 'pointer';
+
+  context.marker.setContent(div);
+  context.marker.setAnchor('center');
+  context.marker.setOffset(new window.AMap.Pixel(0, 0));
+}
+
+// 渲染单个标记点
+function renderSingleMarker(context: any): void {
+  const data = context.data[0]; // 单个点的数据
+  if (!data || !data.item) return;
+
+  const item = data.item as MediaItem;
+  const expanded = isMapMarkerExpanded(mapModel.expandedPath, item.path);
+
+  let marker: any = context.marker;
+  const markerContent = createMarkerContent(item, expanded, () => marker);
+
+  // 重要：先设置锚点，再设置内容
+  context.marker.setAnchor('bottom-center');
+  context.marker.setOffset(new window.AMap.Pixel(0, 0));
+  context.marker.setContent(markerContent);
+
+  markers.push(context.marker);
 }
 
 function createMarkerContent(item: MediaItem, expanded: boolean, getMarker: () => any): HTMLElement {
@@ -760,8 +907,25 @@ function createMarkerContent(item: MediaItem, expanded: boolean, getMarker: () =
 
     clearSearchMarker();
     emit('select', item);
-    mapModel.expandedPath = getNextExpandedPath(mapModel.expandedPath, item.path);
-    renderMarkers();
+
+    // 切换展开状态
+    const newExpandedPath = getNextExpandedPath(mapModel.expandedPath, item.path);
+    const willExpand = newExpandedPath === item.path;
+    const wasExpanded = mapModel.expandedPath === item.path;
+
+    mapModel.expandedPath = newExpandedPath;
+
+    // 如果是展开/收起操作，直接更新当前标记的内容，不重新渲染整个聚合
+    if (willExpand || wasExpanded) {
+      const marker = getMarker();
+      if (marker) {
+        const newContent = createMarkerContent(item, willExpand, () => marker);
+        marker.setContent(newContent);
+      }
+    } else {
+      // 如果是切换到不同的标记，需要重新渲染
+      renderMarkers();
+    }
   });
   container.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') {
@@ -1013,6 +1177,16 @@ function setMapDragEnabled(enabled: boolean): void {
   map?.setStatus?.({ dragEnable: enabled });
 }
 
+// 关闭聚合列表并恢复聚合点样式
+function handleCloseClusterList(): void {
+  clusterModel.listVisible = false;
+  clusterModel.currentClusterKey = '';
+  if (clusterModel.activeClusterElement) {
+    clusterModel.activeClusterElement.classList.remove('active');
+    clusterModel.activeClusterElement = null;
+  }
+}
+
 watch(() => props.geofences, () => {
   renderGeofences();
 }, { deep: true });
@@ -1038,9 +1212,77 @@ watch(() => [props.editingGeofenceId, props.drawingMode] as const, ([id, drawing
   }
 });
 
+// 更新聚合列表（当媒体项变化时）
+function updateClusterListAfterChange(): void {
+  if (!clusterModel.currentClusterKey || !map) {
+    return;
+  }
+
+  // 先从当前列表中获取最新数据
+  const listPaths = clusterModel.listItems.map((item) => item.path);
+  const updatedItems = listPaths
+    .map((path) => props.items.find((item) => item.path === path))
+    .filter(Boolean) as MediaItem[];
+
+  // 获取所有有 GPS 的媒体项（不限于列表中的）
+  const allItemsWithGps = props.items.filter(
+    (item) => item.hasGps && typeof item.longitude === 'number' && typeof item.latitude === 'number'
+  );
+
+  // 如果列表中的媒体项都没有 GPS 了
+  const listItemsWithGps = updatedItems.filter(
+    (item) => item.hasGps && typeof item.longitude === 'number' && typeof item.latitude === 'number'
+  );
+
+  if (listItemsWithGps.length === 0) {
+    handleCloseClusterList();
+    return;
+  }
+
+  // 计算当前列表媒体项的中心位置
+  let sumLng = 0;
+  let sumLat = 0;
+  listItemsWithGps.forEach((item) => {
+    const point = wgs84ToGcj02(item.longitude as number, item.latitude as number);
+    sumLng += point.lng;
+    sumLat += point.lat;
+  });
+  const centerLng = sumLng / listItemsWithGps.length;
+  const centerLat = sumLat / listItemsWithGps.length;
+
+  // 计算聚合半径
+  const zoom = map.getZoom();
+  const metersPerPixel = (40075000 * Math.cos(centerLat * Math.PI / 180)) / (256 * Math.pow(2, zoom));
+  const radiusMeters = 60 * metersPerPixel; // gridSize = 60
+  const radiusDegrees = radiusMeters / 111320;
+
+  // 从所有媒体项中，找出在聚合范围内的（包括新拖进来的）
+  const itemsInCluster = allItemsWithGps.filter((item) => {
+    const point = wgs84ToGcj02(item.longitude as number, item.latitude as number);
+    const distance = Math.sqrt(
+      Math.pow(point.lng - centerLng, 2) + Math.pow(point.lat - centerLat, 2)
+    );
+    return distance <= radiusDegrees;
+  });
+
+  if (itemsInCluster.length <= 1) {
+    // 只剩 1 个或 0 个点了，关闭列表
+    handleCloseClusterList();
+    return;
+  }
+
+  // 更新列表内容（包括新增的和移除的）
+  clusterModel.listItems = itemsInCluster;
+}
+
 watch(
   () => [props.amapKey, props.amapSecurityCode, props.items, props.selectedPath, mapModel.expandedPath],
   async () => {
+    // 如果列表正在显示，需要检查当前聚合点是否还存在
+    if (clusterModel.listVisible && clusterModel.currentClusterKey) {
+      updateClusterListAfterChange();
+    }
+
     await ensureMap();
     renderMarkers();
   },
@@ -1055,6 +1297,9 @@ onBeforeUnmount(() => {
   cleanupMarkerDragListeners();
   if (restoreMapDragTimer !== null) {
     window.clearTimeout(restoreMapDragTimer);
+  }
+  if (markerCluster) {
+    markerCluster.setMap(null);
   }
   const container = map?.getContainer?.();
   container?.removeEventListener?.('dragover', handleDragOver);
@@ -1131,6 +1376,14 @@ onBeforeUnmount(() => {
       :coordinates="getCurrentEditingCoordinates()"
       @confirm="handleConfirmEdit"
       @cancel="handleCancelEdit"
+    />
+
+    <ClusterItemList
+      :visible="clusterModel.listVisible"
+      :items="clusterModel.listItems"
+      :position="clusterModel.listPosition"
+      :fixed-position="true"
+      @close="handleCloseClusterList"
     />
 
     <el-tag class="map-hint" effect="light">{{ mapModel.hint }}</el-tag>

@@ -14,6 +14,7 @@ export interface AppConfig {
   loadVideoContent: boolean;
   gpsWriteMode: GpsWriteMode;
   enableClickToCopy: boolean;
+  enableMarkerClustering: boolean; // 是否启用点位聚合
   _configPath?: string; // 内部属性，用于记录配置文件路径
 }
 

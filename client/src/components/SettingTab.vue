@@ -21,6 +21,7 @@ const settingsModel = reactive({
   mapboxAccessToken: props.config.mapboxAccessToken,
   gpsWriteMode: props.config.gpsWriteMode,
   enableClickToCopy: props.config.enableClickToCopy,
+  enableMarkerClustering: props.config.enableMarkerClustering,
 });
 
 watch(
@@ -33,6 +34,7 @@ watch(
     settingsModel.mapboxAccessToken = config.mapboxAccessToken;
     settingsModel.gpsWriteMode = config.gpsWriteMode;
     settingsModel.enableClickToCopy = config.enableClickToCopy;
+    settingsModel.enableMarkerClustering = config.enableMarkerClustering;
   },
   { deep: true, immediate: true },
 );
@@ -47,6 +49,7 @@ function submit(): void {
     mapboxAccessToken: settingsModel.mapboxAccessToken.trim(),
     gpsWriteMode: settingsModel.gpsWriteMode,
     enableClickToCopy: settingsModel.enableClickToCopy,
+    enableMarkerClustering: settingsModel.enableMarkerClustering,
     backupBeforeWrite: false,
   });
 }
@@ -93,6 +96,11 @@ function submit(): void {
         <el-form-item label="点击地图复制经纬度">
           <el-switch v-model="settingsModel.enableClickToCopy" />
           <span class="form-tip">开启后点击地图可复制经纬度到剪贴板</span>
+        </el-form-item>
+
+        <el-form-item label="启用地图点位聚合">
+          <el-switch v-model="settingsModel.enableMarkerClustering" />
+          <span class="form-tip">开启后密集点位会自动聚合成圆形气泡</span>
         </el-form-item>
       </el-form>
     </el-scrollbar>
