@@ -687,8 +687,6 @@ body {
 
 .map-media-marker {
   position: absolute;
-  left: 0;
-  bottom: 0;
   width: 92px;
   padding: 0 0 12px;
   border: 0;
@@ -940,7 +938,7 @@ body {
   }
 }
 
-.mapboxgl-ctrl.mapboxgl-ctrl-group{
+.mapboxgl-ctrl.mapboxgl-ctrl-group {
   position: absolute;
   right: 18px !important;
   bottom: 96px !important;

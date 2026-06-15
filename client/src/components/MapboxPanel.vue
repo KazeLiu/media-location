@@ -67,6 +67,8 @@ let markers: mapboxgl.Marker[] = [];
 let searchMarker: mapboxgl.Marker | null = null;
 let draw: any = null;
 let geofencePolygonIds: Map<string, string> = new Map();
+let updateMarkersTimer: number | null = null;
+let updateAfterDragTimer: number | null = null;
 
 function renderGeofences(): void {
   if (!map || !draw) return;
@@ -307,6 +309,8 @@ const clusterModel = reactive({
   listVisible: false,
   listItems: [] as MediaItem[],
   listPosition: null as { x: number; y: number } | null,
+  currentClusterId: null as number | null, // 当前聚合点的 cluster_id
+  currentClusterLngLat: null as { lng: number; lat: number } | null, // 当前聚合点的位置
 });
 
 const mouseCoordText = computed(() => {
@@ -453,14 +457,20 @@ async function ensureMap(): Promise<void> {
         clusterRadius: 60, // 聚合半径
       });
 
-      // 添加聚合点圆形图层
+      // 添加聚合点圆形图层（只在 zoom <= 16 时显示）
       map.addLayer({
         id: 'clusters',
         type: 'circle',
         source: 'media-points',
         filter: ['has', 'point_count'],
+        maxzoom: 17, // 超过 zoom 17 隐藏聚合图层
         paint: {
-          'circle-color': '#409eff',
+          'circle-color': [
+            'case',
+            ['boolean', ['feature-state', 'active'], false],
+            '#67c23a', // 激活时绿色
+            '#409eff'  // 默认蓝色
+          ],
           'circle-radius': 20,
           'circle-stroke-width': 3,
           'circle-stroke-color': '#ffffff',
@@ -473,6 +483,7 @@ async function ensureMap(): Promise<void> {
         type: 'symbol',
         source: 'media-points',
         filter: ['has', 'point_count'],
+        maxzoom: 17,
         layout: {
           'text-field': '{point_count_abbreviated}',
           'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
@@ -505,11 +516,18 @@ async function ensureMap(): Promise<void> {
         }
       });
 
-      // 监听 zoom 变化，关闭聚合列表
+      // 监听 zoom 变化，关闭聚合列表并更新自定义 Marker
       map.on('zoomend', () => {
         if (clusterModel.listVisible) {
           handleCloseClusterList();
         }
+        // 强制更新自定义 Marker，确保图片图层和聚合图层同步
+        updateCustomMarkers();
+      });
+
+      // 监听地图移动结束，确保投影矩阵更新后再渲染 Marker
+      map.on('moveend', () => {
+        updateCustomMarkers();
       });
 
       // 鼠标悬停样式
@@ -602,9 +620,68 @@ async function ensureMap(): Promise<void> {
 
 // 关闭聚合列表
 function handleCloseClusterList(): void {
+  // 移除聚合点高亮
+  if (map && clusterModel.currentClusterId !== null) {
+    map.removeFeatureState({
+      source: 'media-points',
+      id: clusterModel.currentClusterId,
+    });
+  }
+
   clusterModel.listVisible = false;
   clusterModel.listItems = [];
   clusterModel.listPosition = null;
+  clusterModel.currentClusterId = null;
+  clusterModel.currentClusterLngLat = null;
+}
+
+// 更新聚合列表（当媒体项变化时）
+function updateClusterListAfterChange(): void {
+  if (!map || !clusterModel.currentClusterLngLat) {
+    return;
+  }
+
+  // 获取所有有 GPS 的媒体项
+  const allItemsWithGps = props.items.filter(
+    (item) => item.hasGps && typeof item.longitude === 'number' && typeof item.latitude === 'number'
+  );
+
+  // 如果没有 GPS 点了，关闭列表
+  if (allItemsWithGps.length === 0) {
+    handleCloseClusterList();
+    return;
+  }
+
+  // 计算聚合半径（根据当前 zoom 和 clusterRadius 配置）
+  const zoom = map.getZoom();
+  const metersPerPixel = 156543.03392 * Math.cos(clusterModel.currentClusterLngLat.lat * Math.PI / 180) / Math.pow(2, zoom);
+  const clusterRadiusPixels = 60; // 与配置的 clusterRadius 一致
+  const clusterRadiusMeters = clusterRadiusPixels * metersPerPixel;
+
+  // 将米转换为经纬度（粗略估算：1度约等于111km）
+  const radiusDegrees = clusterRadiusMeters / 111000;
+
+  // 找出在聚合范围内的所有点
+  const centerLng = clusterModel.currentClusterLngLat.lng;
+  const centerLat = clusterModel.currentClusterLngLat.lat;
+
+  const itemsInCluster = allItemsWithGps.filter((item) => {
+    const lng = item.longitude as number;
+    const lat = item.latitude as number;
+    const distance = Math.sqrt(
+      Math.pow(lng - centerLng, 2) + Math.pow(lat - centerLat, 2)
+    );
+    return distance <= radiusDegrees;
+  });
+
+  // 如果聚合内只剩 1 个或 0 个点了，关闭列表
+  if (itemsInCluster.length <= 1) {
+    handleCloseClusterList();
+    return;
+  }
+
+  // 更新列表内容
+  clusterModel.listItems = itemsInCluster;
 }
 
 function handleDragOver(event: DragEvent): void {
@@ -911,6 +988,14 @@ function renderMarkers(): void {
 function updateMediaPointsSource(): void {
   if (!map) return;
 
+  // 如果正在拖拽，不要更新数据源
+  if (mapModel.draggingMarkerId) {
+    console.log('[Mapbox Debug] skipping updateMediaPointsSource because marker is being dragged, id:', mapModel.draggingMarkerId);
+    return;
+  }
+
+  console.log('[Mapbox Debug] updateMediaPointsSource called');
+
   const source = map.getSource('media-points') as mapboxgl.GeoJSONSource;
   if (!source) return;
 
@@ -940,14 +1025,29 @@ function updateMediaPointsSource(): void {
   source.setData(geojson as any);
 
   // 渲染非聚合的标记点（使用自定义 Marker）
-  renderUnclusteredMarkers();
+  // 只有在非拖拽状态时才渲染
+  if (!mapModel.draggingMarkerId) {
+    renderUnclusteredMarkers();
+  }
 }
 
 // 更新自定义 Marker（未聚合的点）
 function updateCustomMarkers(): void {
   if (!map) return;
 
-  console.log('[Mapbox Debug] updateCustomMarkers called');
+  // 如果正在拖拽，不要重新创建 Marker
+  if (mapModel.draggingMarkerId) {
+    console.log('[Mapbox Debug] skipping updateCustomMarkers because marker is being dragged, id:', mapModel.draggingMarkerId);
+    return;
+  }
+
+  // 清除之前的定时器，防止重复调用
+  if (updateMarkersTimer !== null) {
+    cancelAnimationFrame(updateMarkersTimer);
+    updateMarkersTimer = null;
+  }
+
+  console.log('[Mapbox Debug] updateCustomMarkers called, current markers count:', markers.length);
 
   // 获取当前地图视野范围
   const zoom = map.getZoom();
@@ -962,33 +1062,64 @@ function updateCustomMarkers(): void {
   console.log('[Mapbox Debug] items with GPS:', itemsWithGps.length);
 
   // 清理旧标记
-  markers.forEach((marker) => marker.remove());
+  markers.forEach((marker) => {
+    marker.remove();
+  });
   markers = [];
 
-  // 放大层级才显示自定义标记
-  if (zoom > 16) {
-    // 为每个点创建自定义 Marker
-    itemsWithGps.forEach((item) => {
-      const expanded = isMapMarkerExpanded(mapModel.expandedPath, item.path);
-      const markerContent = createMarkerContent(item, expanded);
+  console.log('[Mapbox Debug] cleared old markers, count before:', markers.length);
 
-      console.log('[Mapbox Debug] creating marker for:', item.name, 'element:', markerContent);
+  // 获取当前视野内未聚合的点
+  const features = map.querySourceFeatures('media-points', {
+    sourceLayer: undefined,
+  });
 
-      const marker = new mapboxgl.Marker({
-        element: markerContent,
-        anchor: 'bottom',
-        draggable: false,
-      })
-        .setLngLat([item.longitude as number, item.latitude as number])
-        .addTo(map);
+  // 筛选出未聚合的点（没有 point_count 属性）
+  const unclusteredFeatures = features.filter((feature: any) => !feature.properties.cluster);
 
-      markers.push(marker);
-    });
+  console.log('[Mapbox Debug] unclustered features in view:', unclusteredFeatures.length);
 
-    console.log('[Mapbox Debug] created custom markers:', markers.length);
-  } else {
-    console.log('[Mapbox Debug] zoom <= 16, showing clusters only');
-  }
+  // 对 features 去重（querySourceFeatures 可能返回重复的点）
+  const uniqueFeaturesMap = new Map<string, any>();
+  unclusteredFeatures.forEach((feature: any) => {
+    const id = feature.properties.id;
+    if (id && !uniqueFeaturesMap.has(id)) {
+      uniqueFeaturesMap.set(id, feature);
+    }
+  });
+
+  const uniqueFeatures = Array.from(uniqueFeaturesMap.values());
+  console.log('[Mapbox Debug] unique unclustered features:', uniqueFeatures.length);
+
+  // 为每个未聚合的点创建自定义 Marker
+  uniqueFeatures.forEach((feature: any) => {
+    const coordinates = feature.geometry.coordinates as [number, number];
+    const properties = feature.properties;
+
+    // 找到对应的媒体项
+    const item = itemsWithGps.find((item) => item.id === properties.id);
+    if (!item) return;
+
+    const expanded = isMapMarkerExpanded(mapModel.expandedPath, item.path);
+    const markerContent = createMarkerContent(item, expanded);
+
+    console.log('[Mapbox Debug] creating marker for:', item.name, 'lng:', coordinates[0], 'lat:', coordinates[1]);
+
+    const marker = new mapboxgl.Marker({
+      element: markerContent,
+      anchor: 'bottom',
+      draggable: false,
+    })
+      .setLngLat([coordinates[0], coordinates[1]])
+      .addTo(map);
+
+    // 存储 item 引用到 marker 对象上，方便拖拽时查找
+    (marker as any)._mediaItem = item;
+
+    markers.push(marker);
+  });
+
+  console.log('[Mapbox Debug] created custom markers:', markers.length);
 }
 
 // 渲染非聚合的标记点
@@ -1019,6 +1150,23 @@ function handleClusterClick(e: any): void {
   const clusterId = features[0].properties?.cluster_id;
   if (clusterId === undefined) return;
 
+  // 移除之前的高亮
+  if (clusterModel.currentClusterId !== null) {
+    map.removeFeatureState({
+      source: 'media-points',
+      id: clusterModel.currentClusterId,
+    });
+  }
+
+  // 设置当前聚合点为激活状态（绿色高亮）
+  map.setFeatureState(
+    {
+      source: 'media-points',
+      id: clusterId,
+    },
+    { active: true }
+  );
+
   const source = map.getSource('media-points') as mapboxgl.GeoJSONSource;
 
   // 获取聚合点内的所有点
@@ -1037,9 +1185,14 @@ function handleClusterClick(e: any): void {
 
     if (items.length === 0) return;
 
-    // 显示列表
+    // 获取聚合点的坐标
+    const coordinates = features[0].geometry.coordinates as [number, number];
+
+    // 显示列表并记录当前聚合点
     clusterModel.listItems = items;
     clusterModel.listPosition = { x: e.point.x, y: e.point.y };
+    clusterModel.currentClusterId = clusterId;
+    clusterModel.currentClusterLngLat = { lng: coordinates[0], lat: coordinates[1] };
     clusterModel.listVisible = true;
   });
 }
@@ -1208,12 +1361,11 @@ function beginMarkerDrag(item: MediaItem, element: HTMLElement, event: PointerEv
   event.stopPropagation();
   clearSearchMarker();
 
-  const marker = markers.find(m => {
-    const lngLat = m.getLngLat();
-    return lngLat.lng === item.longitude && lngLat.lat === item.latitude;
-  });
+  // 通过存储的 _mediaItem 查找对应的 Marker
+  const marker = markers.find(m => (m as any)._mediaItem?.id === item.id);
 
   if (!marker) {
+    console.warn('[Mapbox Debug] Marker not found for item:', item.id);
     return;
   }
 
@@ -1310,6 +1462,17 @@ function finishMarkerDragFromPointer(): void {
     longitude: lnglat.lng,
     latitude: lnglat.lat,
   });
+
+  // 拖拽完成后，使用防抖延迟更新，避免重复调用
+  if (updateAfterDragTimer !== null) {
+    clearTimeout(updateAfterDragTimer);
+  }
+  updateAfterDragTimer = window.setTimeout(() => {
+    console.log('[Mapbox Debug] updating after drag completed');
+    updateMediaPointsSource();
+    updateCustomMarkers();
+    updateAfterDragTimer = null;
+  }, 150);
 }
 
 function cancelMarkerDrag(): void {
@@ -1335,6 +1498,12 @@ watch(
   () => [props.mapboxAccessToken, props.items, props.selectedPath, mapModel.expandedPath],
   async () => {
     await ensureMap();
+
+    // 如果聚合列表正在显示，检查是否需要更新列表
+    if (clusterModel.listVisible && clusterModel.currentClusterLngLat) {
+      updateClusterListAfterChange();
+    }
+
     renderMarkers();
   },
   { deep: true, immediate: true },
@@ -1346,6 +1515,12 @@ onBeforeUnmount(() => {
   markers.forEach((marker) => marker.remove());
   clearSearchMarker();
   cleanupMarkerDragListeners();
+  if (updateMarkersTimer !== null) {
+    cancelAnimationFrame(updateMarkersTimer);
+  }
+  if (updateAfterDragTimer !== null) {
+    clearTimeout(updateAfterDragTimer);
+  }
   const container = map?.getContainer?.();
   container?.removeEventListener?.('dragover', handleDragOver);
   container?.removeEventListener?.('drop', handleDrop);
