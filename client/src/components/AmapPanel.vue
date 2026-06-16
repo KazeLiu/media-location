@@ -275,14 +275,7 @@ function startDrawingGeofence(geofenceId: string): void {
   const geofence = props.geofences.find(g => g.id === geofenceId);
   const color = geofence?.color || '#FF5733';
 
-  mouseTool.polygon({
-    fillColor: color,
-    fillOpacity: 0.3,
-    strokeColor: color,
-    strokeWeight: 2,
-  });
-
-  // 监听绘制完成
+  // 先监听绘制完成事件
   mouseTool.on('draw', (event: any) => {
     const polygon = event.obj;
     const path = polygon.getPath();
@@ -308,6 +301,14 @@ function startDrawingGeofence(geofenceId: string): void {
 
     // 关闭绘制工具
     mouseTool.close(false);
+  });
+
+  // 最后启动绘制模式
+  mouseTool.polygon({
+    fillColor: color,
+    fillOpacity: 0.3,
+    strokeColor: color,
+    strokeWeight: 2,
   });
 }
 
