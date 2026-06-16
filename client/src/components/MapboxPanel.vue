@@ -69,6 +69,7 @@ let draw: any = null;
 let geofencePolygonIds: Map<string, string> = new Map();
 let updateMarkersTimer: number | null = null;
 let updateAfterDragTimer: number | null = null;
+const polygonUpdateTrigger = ref(0); // 用于触发面板更新
 
 function renderGeofences(): void {
   if (!map || !draw) return;
@@ -165,8 +166,11 @@ function stopDrawingOrEditing(): void {
   geofencePolygonIds.clear();
 }
 
-// 获取当前编辑的坐标
-function getCurrentEditingCoordinates() {
+// 获取当前编辑的坐标（响应式计算）
+const currentEditingCoordinates = computed(() => {
+  // 依赖 polygonUpdateTrigger 来触发更新
+  polygonUpdateTrigger.value;
+
   if (!draw || !props.editingGeofenceId) return [];
 
   const drawId = geofencePolygonIds.get(props.editingGeofenceId);
@@ -182,13 +186,13 @@ function getCurrentEditingCoordinates() {
   coordinates.pop(); // 移除闭合点
 
   return coordinates;
-}
+});
 
 // 处理确认保存
 function handleConfirmEdit(): void {
   if (!props.editingGeofenceId) return;
 
-  const coordinates = getCurrentEditingCoordinates();
+  const coordinates = currentEditingCoordinates.value;
   if (coordinates.length < 3) {
     ElMessage.error('多边形至少需要3个顶点');
     return;
@@ -238,8 +242,8 @@ function handleDrawCreate(event: any): void {
 }
 
 function handleDrawUpdate(event: any): void {
-  // 不再自动保存，改为通过面板按钮手动保存
-  // 只在这里做基本的验证，不触发保存事件
+  // 触发面板实时更新
+  polygonUpdateTrigger.value++;
 }
 
 function fitGeofenceBounds(geofence: Geofence): void {
@@ -1675,7 +1679,7 @@ onBeforeUnmount(() => {
     <GeofenceEditPanel
       v-if="drawingMode && editingGeofenceId"
       :geofence="geofences.find(g => g.id === editingGeofenceId)!"
-      :coordinates="getCurrentEditingCoordinates()"
+      :coordinates="currentEditingCoordinates"
       @confirm="handleConfirmEdit"
       @cancel="handleCancelEdit"
     />
