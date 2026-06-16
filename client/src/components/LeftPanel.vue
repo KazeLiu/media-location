@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import type { AppConfig, BrowseResponse, MediaItem, Geofence, GeofenceConfig } from '@shared/contracts';
 import DirectoryBrowser from './DirectoryBrowser.vue';
 import MediaTable from './MediaTable.vue';
@@ -32,6 +32,7 @@ const props = defineProps<{
 
   // Geofence props
   geofenceEnabled: boolean;
+  geofenceShowOnMap: boolean;
   geofences: Geofence[];
   geofenceBusy: boolean;
   editingGeofenceId: string;
@@ -64,7 +65,12 @@ const emit = defineEmits<{
   deleteGeofence: [id: string];
   viewGeofence: [geofence: Geofence];
   editGeofenceArea: [geofence: Geofence];
+
+  // Tab change event
+  tabChange: [tabName: string];
 }>();
+
+const activeTab = ref('基本功能');
 
 const roots = computed(() => props.config.libraryRoots);
 
@@ -81,12 +87,17 @@ function handleDragStart(item: MediaItem, event: DragEvent): void {
 function handleUpdateGeofence(id: string, data: { name: string; color: string }): void {
   emit('updateGeofence', id, data);
 }
+
+function handleTabChange(tabName: string): void {
+  activeTab.value = tabName;
+  emit('tabChange', tabName);
+}
 </script>
 
 <template>
   <aside class="left-panel">
-    <el-tabs class="left-panel-tabs" type="border-card">
-      <el-tab-pane label="基本功能">
+    <el-tabs v-model="activeTab" class="left-panel-tabs" type="border-card" @tab-change="handleTabChange">
+      <el-tab-pane label="基本功能" name="基本功能">
         <div class="tab-content" :class="{
           'directory-is-collapsed': collapseModel.directoryCollapsed,
           'media-is-collapsed': collapseModel.mediaCollapsed,
@@ -127,9 +138,10 @@ function handleUpdateGeofence(id: string, data: { name: string; color: string })
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="电子围栏">
+      <el-tab-pane label="电子围栏" name="电子围栏">
         <GeofenceTab
             :enabled="geofenceEnabled"
+            :show-geofences-on-map="geofenceShowOnMap"
             :geofences="geofences"
             :busy="geofenceBusy"
             :editing-geofence-id="editingGeofenceId"
@@ -143,7 +155,7 @@ function handleUpdateGeofence(id: string, data: { name: string; color: string })
         />
       </el-tab-pane>
 
-      <el-tab-pane label="设置">
+      <el-tab-pane label="设置" name="设置">
         <SettingTab
           :config="config"
           :busy="settingsBusy"
@@ -151,7 +163,7 @@ function handleUpdateGeofence(id: string, data: { name: string; color: string })
         />
       </el-tab-pane>
 
-      <el-tab-pane label="用法指南">
+      <el-tab-pane label="用法指南" name="用法指南">
         <GuideTab />
       </el-tab-pane>
 

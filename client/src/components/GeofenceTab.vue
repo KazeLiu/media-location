@@ -7,6 +7,7 @@ import GeofenceEditorDialog from './GeofenceEditorDialog.vue';
 
 const props = defineProps<{
   enabled: boolean;
+  showGeofencesOnMap: boolean;
   geofences: Geofence[];
   busy: boolean;
   editingGeofenceId: string;
@@ -28,6 +29,15 @@ const editingGeofence = ref<Geofence | null>(null);
 function handleEnabledChange(value: boolean): void {
   emit('save', {
     enabled: value,
+    showGeofencesOnMap: props.showGeofencesOnMap,
+    geofences: props.geofences,
+  });
+}
+
+function handleShowGeofencesOnMapChange(value: boolean): void {
+  emit('save', {
+    enabled: props.enabled,
+    showGeofencesOnMap: value,
     geofences: props.geofences,
   });
 }
@@ -82,6 +92,12 @@ function handleEditArea(geofence?: Geofence): void {
         :disabled="busy"
         active-text="在基本功能显示围栏列表"
         @change="handleEnabledChange"
+      />
+      <el-switch
+        :model-value="showGeofencesOnMap"
+        :disabled="busy"
+        active-text="在基本功能页面显示地图围栏"
+        @change="handleShowGeofencesOnMapChange"
       />
     </div>
 
@@ -165,7 +181,8 @@ function handleEditArea(geofence?: Geofence): void {
 
 .geofence-header {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .geofence-actions {

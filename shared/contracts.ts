@@ -104,6 +104,7 @@ export interface Geofence {
 }
 
 export interface GeofenceConfig {
-  enabled: boolean;
+  enabled: boolean; // 是否在基本功能页面显示围栏列表
+  showGeofencesOnMap: boolean; // 是否在基本功能页面显示地图围栏
   geofences: Geofence[];
 }

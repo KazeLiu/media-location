@@ -4,6 +4,7 @@ import type { GeofenceConfig } from '../../shared/contracts';
 
 const DEFAULT_CONFIG: GeofenceConfig = {
   enabled: false,
+  showGeofencesOnMap: true,
   geofences: [],
 };
 
@@ -11,6 +12,10 @@ export async function loadGeofenceConfig(configPath: string): Promise<GeofenceCo
   try {
     const content = await fs.readFile(configPath, 'utf-8');
     const config = JSON.parse(content) as GeofenceConfig;
+    // 兼容旧版本配置，如果没有 showGeofencesOnMap 字段，默认为 true
+    if (config.showGeofencesOnMap === undefined) {
+      config.showGeofencesOnMap = true;
+    }
     return config;
   } catch (error: any) {
     if (error.code === 'ENOENT') {

@@ -72,12 +72,14 @@ const pinModel = reactive({
 const layoutModel = reactive({
   leftPanelWidth: loadLeftPanelWidth(),
   folderPickerOpen: false,
+  activeTab: '基本功能',
 });
 
 // Geofence block: owns围栏配置和编辑状态
 const geofenceModel = reactive({
   busy: false,
   enabled: false,
+  showGeofencesOnMap: false,
   geofences: [] as Geofence[],
   editingGeofenceId: '',
   drawingMode: false,
@@ -155,6 +157,7 @@ function applyConfig(config: AppConfig): void {
 
 function applyGeofenceConfig(config: GeofenceConfig): void {
   geofenceModel.enabled = config.enabled;
+  geofenceModel.showGeofencesOnMap = config.showGeofencesOnMap ?? true; // 默认显示
   geofenceModel.geofences = config.geofences;
 }
 
@@ -200,6 +203,7 @@ function handleUpdateGeofence(id: string, data: { name: string; color: string })
 
   void saveGeofences({
     enabled: geofenceModel.enabled,
+    showGeofencesOnMap: geofenceModel.showGeofencesOnMap,
     geofences: geofenceModel.geofences,
   });
 }
@@ -208,6 +212,7 @@ async function handleDeleteGeofence(id: string): Promise<void> {
   geofenceModel.geofences = geofenceModel.geofences.filter(g => g.id !== id);
   await saveGeofences({
     enabled: geofenceModel.enabled,
+    showGeofencesOnMap: geofenceModel.showGeofencesOnMap,
     geofences: geofenceModel.geofences,
   });
 }
@@ -235,6 +240,7 @@ function handleGeofenceDrawn(id: string, coordinates: GeofenceCoordinate[]): voi
 
   void saveGeofences({
     enabled: geofenceModel.enabled,
+    showGeofencesOnMap: geofenceModel.showGeofencesOnMap,
     geofences: geofenceModel.geofences,
   });
 }
@@ -251,6 +257,7 @@ function handleGeofenceEdited(id: string, coordinates: GeofenceCoordinate[]): vo
 
   void saveGeofences({
     enabled: geofenceModel.enabled,
+    showGeofencesOnMap: geofenceModel.showGeofencesOnMap,
     geofences: geofenceModel.geofences,
   });
 }
@@ -621,6 +628,20 @@ function handlePanelResize(width: number): void {
   saveLeftPanelWidth(width);
 }
 
+function handleTabChange(tabName: string): void {
+  layoutModel.activeTab = tabName;
+}
+
+// 计算是否应该在地图上显示围栏
+const shouldShowGeofencesOnMap = computed(() => {
+  // 如果在电子围栏标签页，始终显示
+  if (layoutModel.activeTab === '电子围栏') {
+    return true;
+  }
+  // 在其他标签页，根据设置决定
+  return geofenceModel.showGeofencesOnMap;
+});
+
 onMounted(loadInitial);
 onBeforeUnmount(clearMediaFilterTimer);
 </script>
@@ -647,6 +668,7 @@ onBeforeUnmount(clearMediaFilterTimer);
           :config="settingsModel.config"
           :settings-busy="settingsModel.busy"
           :geofence-enabled="geofenceModel.enabled"
+          :geofence-show-on-map="geofenceModel.showGeofencesOnMap"
           :geofences="geofenceModel.geofences"
           :geofence-busy="geofenceModel.busy"
           :editing-geofence-id="geofenceModel.editingGeofenceId"
@@ -669,6 +691,7 @@ onBeforeUnmount(clearMediaFilterTimer);
           @delete-geofence="handleDeleteGeofence"
           @view-geofence="handleViewGeofence"
           @edit-geofence-area="handleEditGeofenceArea"
+          @tab-change="handleTabChange"
         />
       </div>
 
@@ -688,7 +711,7 @@ onBeforeUnmount(clearMediaFilterTimer);
           :mapbox-access-token="settingsModel.config.mapboxAccessToken"
           :items="visibleMedia"
           :selected-path="selectionModel.selectedPath"
-          :geofences="geofenceModel.geofences"
+          :geofences="shouldShowGeofencesOnMap ? geofenceModel.geofences : []"
           :editing-geofence-id="geofenceModel.editingGeofenceId"
           :drawing-mode="geofenceModel.drawingMode"
           :enable-click-to-copy="settingsModel.config.enableClickToCopy"
@@ -702,7 +725,7 @@ onBeforeUnmount(clearMediaFilterTimer);
           @cancel-edit="handleCancelGeofenceEdit"
         >
           <GeofenceFloatingList
-            v-if="geofenceModel.enabled"
+            v-if="geofenceModel.enabled && layoutModel.activeTab === '基本功能'"
             :geofences="geofenceModel.geofences"
             @drop="handleDropToGeofence"
           />
