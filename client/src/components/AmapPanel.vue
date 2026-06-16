@@ -210,11 +210,17 @@ async function ensureMap(): Promise<void> {
 
 function renderGeofences(): void {
   if (!map) return;
+  console.log('[renderGeofences] 开始渲染，当前围栏数量:', props.geofences.length);
+  console.log('[renderGeofences] geofencePolygons.size 清理前:', geofencePolygons.size);
 
   clearGeofencePolygons();
 
+  console.log('[renderGeofences] geofencePolygons.size 清理后:', geofencePolygons.size);
+
   for (const geofence of props.geofences) {
     if (geofence.coordinates.length < 3) continue;
+
+    console.log('[renderGeofences] 渲染围栏:', geofence.id, geofence.name);
 
     const gcj02Path = geofence.coordinates.map(coord => {
       const gcj = wgs84ToGcj02(coord.longitude, coord.latitude);
@@ -240,6 +246,8 @@ function renderGeofences(): void {
       }
     });
   }
+
+  console.log('[renderGeofences] 渲染完成，geofencePolygons.size:', geofencePolygons.size);
 }
 
 function clearGeofencePolygons(): void {
@@ -364,7 +372,7 @@ function stopDrawingOrEditing(): void {
   }
 
   if (currentEditingPolygon.value) {
-    map?.remove(currentEditingPolygon.value);
+    currentEditingPolygon.value.setMap(null);
     currentEditingPolygon.value = null;
   }
 
@@ -384,6 +392,7 @@ function getCurrentEditingCoordinates() {
 
 // 处理确认保存
 function handleConfirmEdit(): void {
+  console.log('[handleConfirmEdit] 开始');
   if (!props.editingGeofenceId || !currentEditingPolygon.value) return;
 
   const coordinates = getCurrentEditingCoordinates();
@@ -392,26 +401,35 @@ function handleConfirmEdit(): void {
     return;
   }
 
-  // 先移除编辑用的多边形，避免与 watch 触发的 renderGeofences 冲突
-  if (currentEditingPolygon.value) {
-    map?.remove(currentEditingPolygon.value);
-    currentEditingPolygon.value = null;
-  }
+  console.log('[handleConfirmEdit] 移除编辑多边形前，地图上所有覆盖物数量:', map?.getAllOverlays().length);
 
+  // 必须先关闭编辑器
   if (polygonEditor) {
     polygonEditor.close();
+    console.log('[handleConfirmEdit] 已关闭 PolygonEditor');
   }
 
   if (mouseTool) {
     mouseTool.close(true);
   }
 
+  // 使用 setMap(null) 而不是 map.remove() 来移除多边形
+  if (currentEditingPolygon.value) {
+    currentEditingPolygon.value.setMap(null);
+    currentEditingPolygon.value = null;
+    console.log('[handleConfirmEdit] 已移除编辑多边形');
+  }
+
+  console.log('[handleConfirmEdit] 移除后，地图上所有覆盖物数量:', map?.getAllOverlays().length);
+
   const geofence = props.geofences.find(g => g.id === props.editingGeofenceId);
   if (geofence && geofence.coordinates.length === 0) {
     // 新建模式
+    console.log('[handleConfirmEdit] 发射 geofenceDrawn 事件');
     emit('geofenceDrawn', props.editingGeofenceId, coordinates);
   } else {
     // 编辑模式
+    console.log('[handleConfirmEdit] 发射 geofenceEdited 事件');
     emit('geofenceEdited', props.editingGeofenceId, coordinates);
   }
 
