@@ -392,6 +392,20 @@ function handleConfirmEdit(): void {
     return;
   }
 
+  // 先移除编辑用的多边形，避免与 watch 触发的 renderGeofences 冲突
+  if (currentEditingPolygon.value) {
+    map?.remove(currentEditingPolygon.value);
+    currentEditingPolygon.value = null;
+  }
+
+  if (polygonEditor) {
+    polygonEditor.close();
+  }
+
+  if (mouseTool) {
+    mouseTool.close(true);
+  }
+
   const geofence = props.geofences.find(g => g.id === props.editingGeofenceId);
   if (geofence && geofence.coordinates.length === 0) {
     // 新建模式
@@ -401,7 +415,7 @@ function handleConfirmEdit(): void {
     emit('geofenceEdited', props.editingGeofenceId, coordinates);
   }
 
-  stopDrawingOrEditing();
+  // 父组件更新后，watch 会自动触发 renderGeofences，这里不需要再调用
 }
 
 // 处理取消编辑
