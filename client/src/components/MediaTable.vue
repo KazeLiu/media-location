@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
+import { computed, reactive, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { ArrowDown, ArrowRight, Check, Close, Location, Picture, Search, VideoCamera } from '@element-plus/icons-vue';
 import { Pin, PinOff } from 'lucide-vue-next';
@@ -50,6 +50,16 @@ const manualGpsModel = reactive({
 const pinSectionModel = reactive({
   collapsed: false,
 });
+
+// Batch operation block: owns batch selection and drag state.
+const batchOperationModel = reactive({
+  enabled: false,
+  selectedPaths: new Set<string>(),
+  dragElement: null as HTMLElement | null,
+});
+
+const selectedCount = computed(() => batchOperationModel.selectedPaths.size);
+const hasSelection = computed(() => selectedCount.value > 0);
 
 const pinnedPathSet = computed(() => new Set(props.pinnedItems.map((item) => item.path)));
 const currentDirectoryItems = computed(() => props.items.filter((item) => !pinnedPathSet.value.has(item.path)));
@@ -195,6 +205,84 @@ function parseCoordinate(source: string): { longitude: number; latitude: number 
 
   return { longitude, latitude };
 }
+
+function toggleBatchMode(): void {
+  batchOperationModel.enabled = !batchOperationModel.enabled;
+  if (!batchOperationModel.enabled) {
+    clearBatchSelection();
+  }
+}
+
+function clearBatchSelection(): void {
+  batchOperationModel.selectedPaths.clear();
+}
+
+function toggleSelection(path: string, event: MouseEvent): void {
+  event.stopPropagation();
+  if (batchOperationModel.selectedPaths.has(path)) {
+    batchOperationModel.selectedPaths.delete(path);
+  } else {
+    batchOperationModel.selectedPaths.add(path);
+  }
+}
+
+function selectAllMedia(): void {
+  currentDirectoryItems.value.forEach(item => {
+    batchOperationModel.selectedPaths.add(item.path);
+  });
+}
+
+function isSelected(path: string): boolean {
+  return batchOperationModel.selectedPaths.has(path);
+}
+
+function handleDragStart(item: MediaItem, event: DragEvent): void {
+  if (batchOperationModel.enabled && batchOperationModel.selectedPaths.has(item.path)) {
+    handleBatchDragStart(event);
+  } else {
+    emit('dragStart', item, event);
+  }
+}
+
+function handleBatchDragStart(event: DragEvent): void {
+  const paths = Array.from(batchOperationModel.selectedPaths);
+  const batchData = {
+    type: 'batch',
+    paths,
+    count: paths.length,
+  };
+
+  if (event.dataTransfer) {
+    event.dataTransfer.setData('application/json', JSON.stringify(batchData));
+    event.dataTransfer.effectAllowed = 'move';
+
+    const dragGhost = document.createElement('div');
+    dragGhost.className = 'batch-drag-ghost';
+    dragGhost.textContent = `📦 ${paths.length}`;
+    dragGhost.style.position = 'absolute';
+    dragGhost.style.top = '-1000px';
+    document.body.appendChild(dragGhost);
+
+    event.dataTransfer.setDragImage(dragGhost, 20, 20);
+    batchOperationModel.dragElement = dragGhost;
+
+    setTimeout(() => {
+      if (batchOperationModel.dragElement) {
+        document.body.removeChild(batchOperationModel.dragElement);
+        batchOperationModel.dragElement = null;
+      }
+    }, 0);
+  }
+}
+
+// 监听目录切换，自动退出批量模式
+watch(() => props.currentDir, () => {
+  if (batchOperationModel.enabled) {
+    batchOperationModel.enabled = false;
+    clearBatchSelection();
+  }
+});
+
 </script>
 
 <template>
@@ -226,6 +314,23 @@ function parseCoordinate(source: string): { longitude: number; latitude: number 
             placeholder="按文件名过滤"
             @input="emit('filterChange', String($event))"
           />
+          <el-button
+            :type="batchOperationModel.enabled ? 'primary' : 'default'"
+            size="default"
+            @click="toggleBatchMode"
+          >
+            {{ batchOperationModel.enabled ? '退出批量' : '批量操作' }}
+          </el-button>
+        </div>
+
+        <div v-if="batchOperationModel.enabled" class="batch-operation-bar">
+          <el-space :size="8" alignment="center">
+            <el-button size="small" @click="selectAllMedia">全选</el-button>
+            <el-button size="small" @click="clearBatchSelection">清除</el-button>
+            <el-tag v-if="hasSelection" type="info" size="small" effect="plain">
+              已选中 {{ selectedCount }} 个
+            </el-tag>
+          </el-space>
         </div>
 
         <section
@@ -268,14 +373,23 @@ function parseCoordinate(source: string): { longitude: number; latitude: number 
                 v-for="item in section.items"
                 :key="item.path"
                 class="media-card"
-                :class="{ selected: item.path === selectedPath }"
+                :class="{
+                  selected: item.path === selectedPath,
+                  'batch-selected': batchOperationModel.enabled && isSelected(item.path)
+                }"
                 shadow="hover"
                 @click="emit('select', item)"
               >
+                <el-checkbox
+                  v-if="batchOperationModel.enabled"
+                  class="batch-checkbox"
+                  :model-value="isSelected(item.path)"
+                  @click="toggleSelection(item.path, $event)"
+                />
                 <div
                   class="preview-frame"
                   draggable="true"
-                  @dragstart="emit('dragStart', item, $event)"
+                  @dragstart="handleDragStart(item, $event)"
                 >
                   <el-image
                     v-if="item.mediaType === 'image'"

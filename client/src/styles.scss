@@ -943,3 +943,37 @@ body {
   right: 18px !important;
   bottom: 96px !important;
 }
+
+// 批量操作样式
+.batch-operation-bar {
+  padding: 8px 12px;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.batch-checkbox {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.media-card.batch-selected {
+  border: 2px solid #409eff;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
+}
+
+.batch-drag-ghost {
+  background-color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  font-size: 14px;
+  font-weight: bold;
+  color: #409eff;
+  white-space: nowrap;
+}

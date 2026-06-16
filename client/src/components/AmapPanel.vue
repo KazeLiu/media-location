@@ -411,6 +411,22 @@ function handleDrop(event: DragEvent): void {
   }
 
   event.preventDefault();
+
+  // 尝试解析批量拖拽数据
+  const jsonData = event.dataTransfer?.getData('application/json');
+  if (jsonData) {
+    try {
+      const batchData = JSON.parse(jsonData);
+      if (batchData.type === 'batch' && Array.isArray(batchData.paths)) {
+        handleBatchDrop(batchData.paths, event);
+        return;
+      }
+    } catch (e) {
+      // 不是有效的批量数据，继续单个处理
+    }
+  }
+
+  // 单个拖拽处理（原有逻辑）
   const droppedPath = event.dataTransfer?.getData('text/plain');
   const item = props.items.find((entry) => entry.path === droppedPath || entry.id === droppedPath);
   if (!item) {
@@ -430,6 +446,53 @@ function handleDrop(event: DragEvent): void {
     latitude: wgs84.lat,
   });
 }
+
+function handleBatchDrop(paths: string[], event: DragEvent): void {
+  if (!map || !window.AMap) return;
+
+  clearSearchMarker();
+  const container = map.getContainer();
+  const rect = container.getBoundingClientRect();
+  const pixel = new window.AMap.Pixel(event.clientX - rect.left, event.clientY - rect.top);
+  const lnglat = map.containerToLngLat(pixel);
+  const wgs84 = gcj02ToWgs84(lnglat.lng, lnglat.lat);
+
+  const positions = generateRandomPositions(wgs84.lng, wgs84.lat, paths.length);
+
+  // 批量触发 place 事件
+  positions.forEach((pos, index) => {
+    emit('place', {
+      path: paths[index],
+      longitude: pos.longitude,
+      latitude: pos.latitude,
+    });
+  });
+}
+
+function generateRandomPositions(
+  centerLng: number,
+  centerLat: number,
+  count: number
+): Array<{ longitude: number; latitude: number }> {
+  const positions = [];
+  const radiusMeters = 10;
+
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * 2 * Math.PI;
+    const radius = Math.sqrt(Math.random()) * radiusMeters;
+
+    const latOffset = (radius * Math.cos(angle)) / 111320;
+    const lngOffset = (radius * Math.sin(angle)) / (111320 * Math.cos(centerLat * Math.PI / 180));
+
+    positions.push({
+      longitude: centerLng + lngOffset,
+      latitude: centerLat + latOffset,
+    });
+  }
+
+  return positions;
+}
+
 
 async function searchAddress(): Promise<void> {
   if (!mapModel.searchKeyword.trim()) {
