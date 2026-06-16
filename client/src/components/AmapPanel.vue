@@ -319,12 +319,18 @@ function startEditingGeofence(geofenceId: string): void {
 
   const AMap = (window as any).AMap;
 
+  // 先隐藏原有的围栏多边形，避免重复显示
+  const existingPolygon = geofencePolygons.get(geofenceId);
+  if (existingPolygon) {
+    existingPolygon.setMap(null);
+  }
+
   const gcj02Path = geofence.coordinates.map(coord => {
     const gcj = wgs84ToGcj02(coord.longitude, coord.latitude);
     return new AMap.LngLat(gcj.lng, gcj.lat);
   });
 
-  // 创建多边形
+  // 创建多边形用于编辑
   const polygon = new AMap.Polygon({
     path: gcj02Path,
     fillColor: geofence.color,
