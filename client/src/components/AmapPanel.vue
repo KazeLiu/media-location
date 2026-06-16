@@ -89,6 +89,7 @@ let geofencePolygons: Map<string, any> = new Map();
 let mouseTool: any = null;
 let polygonEditor: any = null;
 const currentEditingPolygon = ref<any>(null);
+const polygonUpdateTrigger = ref(0); // 用于触发面板更新
 
 // Map block: owns AMap state, search text, raw AMap hover coordinate, and expanded marker path.
 const mapModel = reactive({
@@ -303,6 +304,28 @@ function startDrawingGeofence(geofenceId: string): void {
       polygonEditor = new AMap.PolygonEditor(map);
     }
 
+    // 监听编辑器事件，实时更新面板
+    polygonEditor.off('adjust');
+    polygonEditor.off('addnode');
+    polygonEditor.off('removenode');
+    polygonEditor.off('move');
+
+    polygonEditor.on('adjust', () => {
+      polygonUpdateTrigger.value++;
+    });
+
+    polygonEditor.on('addnode', () => {
+      polygonUpdateTrigger.value++;
+    });
+
+    polygonEditor.on('removenode', () => {
+      polygonUpdateTrigger.value++;
+    });
+
+    polygonEditor.on('move', () => {
+      polygonUpdateTrigger.value++;
+    });
+
     polygonEditor.setTarget(polygon);
     polygonEditor.open();
 
@@ -356,6 +379,28 @@ function startEditingGeofence(geofenceId: string): void {
     polygonEditor = new AMap.PolygonEditor(map);
   }
 
+  // 监听编辑器事件，实时更新面板
+  polygonEditor.off('adjust');
+  polygonEditor.off('addnode');
+  polygonEditor.off('removenode');
+  polygonEditor.off('move');
+
+  polygonEditor.on('adjust', () => {
+    polygonUpdateTrigger.value++;
+  });
+
+  polygonEditor.on('addnode', () => {
+    polygonUpdateTrigger.value++;
+  });
+
+  polygonEditor.on('removenode', () => {
+    polygonUpdateTrigger.value++;
+  });
+
+  polygonEditor.on('move', () => {
+    polygonUpdateTrigger.value++;
+  });
+
   polygonEditor.setTarget(polygon);
   polygonEditor.open();
 
@@ -379,8 +424,11 @@ function stopDrawingOrEditing(): void {
   renderGeofences();
 }
 
-// 获取当前编辑的坐标
-function getCurrentEditingCoordinates() {
+// 获取当前编辑的坐标（响应式计算）
+const currentEditingCoordinates = computed(() => {
+  // 依赖 polygonUpdateTrigger 来触发更新
+  polygonUpdateTrigger.value;
+
   if (!currentEditingPolygon.value) return [];
 
   const path = currentEditingPolygon.value.getPath();
@@ -388,14 +436,14 @@ function getCurrentEditingCoordinates() {
     const wgs = gcj02ToWgs84(lngLat.lng, lngLat.lat);
     return { longitude: wgs.lng, latitude: wgs.lat };
   });
-}
+});
 
 // 处理确认保存
 function handleConfirmEdit(): void {
   console.log('[handleConfirmEdit] 开始');
   if (!props.editingGeofenceId || !currentEditingPolygon.value) return;
 
-  const coordinates = getCurrentEditingCoordinates();
+  const coordinates = currentEditingCoordinates.value;
   if (coordinates.length < 3) {
     ElMessage.error('多边形至少需要3个顶点');
     return;
@@ -1488,7 +1536,7 @@ onBeforeUnmount(() => {
     <GeofenceEditPanel
       v-if="drawingMode && editingGeofenceId && currentEditingPolygon"
       :geofence="geofences.find(g => g.id === editingGeofenceId)!"
-      :coordinates="getCurrentEditingCoordinates()"
+      :coordinates="currentEditingCoordinates"
       @confirm="handleConfirmEdit"
       @cancel="handleCancelEdit"
     />
