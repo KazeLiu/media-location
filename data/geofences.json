@@ -1,5 +1,6 @@
 {
   "enabled": true,
+  "showGeofencesOnMap": false,
   "geofences": [
     {
       "id": "22a6d682-b911-4cea-ba44-708229c62782",

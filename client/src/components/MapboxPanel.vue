@@ -232,8 +232,8 @@ function handleDrawCreate(event: any): void {
   if (props.editingGeofenceId) {
     geofencePolygonIds.set(props.editingGeofenceId, feature.id);
 
-    // 切换到选择模式，允许继续编辑
-    draw.changeMode('simple_select', { featureIds: [feature.id] });
+    // 切换到直接选择模式，允许继续编辑顶点
+    draw.changeMode('direct_select', { featureId: feature.id });
   }
 }
 

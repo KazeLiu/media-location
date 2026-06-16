@@ -1446,7 +1446,7 @@ onBeforeUnmount(() => {
     </div>
 
     <GeofenceEditPanel
-      v-if="drawingMode && editingGeofenceId && currentEditingPolygon"
+      v-if="drawingMode && editingGeofenceId"
       :geofence="geofences.find(g => g.id === editingGeofenceId)!"
       :coordinates="getCurrentEditingCoordinates()"
       @confirm="handleConfirmEdit"
