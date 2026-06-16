@@ -269,6 +269,9 @@ function startDrawingGeofence(geofenceId: string): void {
     mouseTool = new AMap.MouseTool(map);
   }
 
+  // 清理旧的事件监听
+  mouseTool.off('draw');
+
   const geofence = props.geofences.find(g => g.id === geofenceId);
   const color = geofence?.color || '#FF5733';
 
