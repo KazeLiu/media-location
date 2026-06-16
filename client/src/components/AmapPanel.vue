@@ -88,7 +88,7 @@ let markerDragState: {
 let geofencePolygons: Map<string, any> = new Map();
 let mouseTool: any = null;
 let polygonEditor: any = null;
-let currentEditingPolygon: any = null;
+const currentEditingPolygon = ref<any>(null);
 
 // Map block: owns AMap state, search text, raw AMap hover coordinate, and expanded marker path.
 const mapModel = reactive({
@@ -285,10 +285,9 @@ function startDrawingGeofence(geofenceId: string): void {
       map?.remove(polygon);
       return;
     }
-
     // 新建围栏时，保存临时多边形并切换到编辑模式
     // 不自动保存，等待用户点击面板的确认按钮
-    currentEditingPolygon = polygon;
+    currentEditingPolygon.value = polygon;
 
     // 创建编辑器并打开编辑模式
     if (!polygonEditor) {
@@ -336,7 +335,7 @@ function startEditingGeofence(geofenceId: string): void {
   });
 
   map.add(polygon);
-  currentEditingPolygon = polygon;
+  currentEditingPolygon.value = polygon;
 
   // 创建编辑器
   if (!polygonEditor) {
@@ -358,9 +357,9 @@ function stopDrawingOrEditing(): void {
     polygonEditor.close();
   }
 
-  if (currentEditingPolygon) {
-    map?.remove(currentEditingPolygon);
-    currentEditingPolygon = null;
+  if (currentEditingPolygon.value) {
+    map?.remove(currentEditingPolygon.value);
+    currentEditingPolygon.value = null;
   }
 
   renderGeofences();
@@ -368,9 +367,9 @@ function stopDrawingOrEditing(): void {
 
 // 获取当前编辑的坐标
 function getCurrentEditingCoordinates() {
-  if (!currentEditingPolygon) return [];
+  if (!currentEditingPolygon.value) return [];
 
-  const path = currentEditingPolygon.getPath();
+  const path = currentEditingPolygon.value.getPath();
   return path.map((lngLat: any) => {
     const wgs = gcj02ToWgs84(lngLat.lng, lngLat.lat);
     return { longitude: wgs.lng, latitude: wgs.lat };
@@ -379,7 +378,7 @@ function getCurrentEditingCoordinates() {
 
 // 处理确认保存
 function handleConfirmEdit(): void {
-  if (!props.editingGeofenceId || !currentEditingPolygon) return;
+  if (!props.editingGeofenceId || !currentEditingPolygon.value) return;
 
   const coordinates = getCurrentEditingCoordinates();
   if (coordinates.length < 3) {
@@ -1448,7 +1447,6 @@ onBeforeUnmount(() => {
         </el-button>
       </el-button-group>
     </div>
-
     <GeofenceEditPanel
       v-if="drawingMode && editingGeofenceId && currentEditingPolygon"
       :geofence="geofences.find(g => g.id === editingGeofenceId)!"
