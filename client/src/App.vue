@@ -267,24 +267,41 @@ function handleCancelGeofenceEdit(): void {
   geofenceModel.drawingMode = false;
 }
 
-async function handleDropToGeofence(geofence: Geofence, mediaPath: string): Promise<void> {
+async function handleDropToGeofence(geofence: Geofence, mediaPaths: string[]): Promise<void> {
   try {
     if (geofence.coordinates.length < 3) {
       ElMessage.warning('该围栏还未绘制区域');
       return;
     }
 
-    const randomCoord = getRandomPointInPolygon(geofence.coordinates);
+    let successCount = 0;
+    let failCount = 0;
 
-    await placeMedia({
-      path: mediaPath,
-      longitude: randomCoord.longitude,
-      latitude: randomCoord.latitude,
-    });
+    for (const mediaPath of mediaPaths) {
+      try {
+        const randomCoord = getRandomPointInPolygon(geofence.coordinates);
+        await placeMedia({
+          path: mediaPath,
+          longitude: randomCoord.longitude,
+          latitude: randomCoord.latitude,
+        });
+        successCount++;
+      } catch (error) {
+        console.error(`Failed to place ${mediaPath}:`, error);
+        failCount++;
+      }
+    }
 
-    selectionModel.selectedPath = mediaPath;
-
-    ElMessage.success(`已设置到围栏"${geofence.name}"内的随机位置`);
+    if (mediaPaths.length === 1) {
+      selectionModel.selectedPath = mediaPaths[0];
+      ElMessage.success(`已设置到围栏"${geofence.name}"内的随机位置`);
+    } else {
+      if (failCount === 0) {
+        ElMessage.success(`已将 ${successCount} 个文件设置到围栏"${geofence.name}"内`);
+      } else {
+        ElMessage.warning(`成功 ${successCount} 个，失败 ${failCount} 个`);
+      }
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : '设置失败';
     ElMessage.error(message);
@@ -725,7 +742,7 @@ onBeforeUnmount(clearMediaFilterTimer);
           @cancel-edit="handleCancelGeofenceEdit"
         >
           <GeofenceFloatingList
-            v-if="geofenceModel.enabled && layoutModel.activeTab === '基本功能'"
+            v-if="geofenceModel.enabled && layoutModel.activeTab === '基本功能' && geofenceModel.geofences.length > 0"
             :geofences="geofenceModel.geofences"
             @drop="handleDropToGeofence"
           />

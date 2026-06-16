@@ -86,5 +86,7 @@ function handleGeofenceEdited(id: string, coords: GeofenceCoordinate[]): void {
     @geofence-edited="handleGeofenceEdited"
     @ready="handleReady"
     @error="handleError"
-  />
+  >
+    <slot />
+  </component>
 </template>

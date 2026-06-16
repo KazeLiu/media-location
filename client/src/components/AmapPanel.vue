@@ -1533,5 +1533,7 @@ onBeforeUnmount(() => {
     />
 
     <el-tag class="map-hint" effect="light">{{ mapModel.hint }}</el-tag>
+
+    <slot />
   </section>
 </template>

@@ -7,7 +7,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  drop: [geofence: Geofence, mediaPath: string];
+  drop: [geofence: Geofence, mediaPaths: string[]];
 }>();
 
 const hoveredId = ref('');
@@ -23,17 +23,34 @@ function handleDragLeave(): void {
 
 function handleDrop(event: DragEvent, geofence: Geofence): void {
   event.preventDefault();
+
+  // 先尝试获取批量拖拽数据
+  const batchDataStr = event.dataTransfer?.getData('application/json');
+  if (batchDataStr) {
+    try {
+      const batchData = JSON.parse(batchDataStr);
+      if (batchData.type === 'batch' && Array.isArray(batchData.paths)) {
+        emit('drop', geofence, batchData.paths);
+        hoveredId.value = '';
+        return;
+      }
+    } catch (e) {
+      console.error('Failed to parse batch drag data:', e);
+    }
+  }
+
+  // 回退到单个文件拖拽
   const mediaPath = event.dataTransfer?.getData('text/plain');
   if (mediaPath) {
-    emit('drop', geofence, mediaPath);
+    emit('drop', geofence, [mediaPath]);
   }
   hoveredId.value = '';
 }
 </script>
 
 <template>
-  <div v-if="geofences.length" class="geofence-floating-list">
-    <div class="floating-header">电子围栏</div>
+  <div class="geofence-floating-list">
+    <div class="floating-header">电子围栏 ({{ geofences.length }})</div>
 
     <div class="floating-content">
       <div
@@ -59,7 +76,7 @@ function handleDrop(event: DragEvent, geofence: Geofence): void {
 .geofence-floating-list {
   position: absolute;
   left: 16px;
-  top: 50%;
+  top: 110px;
   transform: translateY(-50%);
   width: 200px;
   max-height: 400px;

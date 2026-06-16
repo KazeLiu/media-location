@@ -4,7 +4,7 @@ import type { AppConfig } from '../../shared/contracts';
 
 const DEFAULT_CONFIG: AppConfig = {
   appName: 'Media Location',
-  appVersion: '0.4.7',
+  appVersion: '0.6.3',
   port: 6755,
   mapProvider: 'amap',
   amapKey: '',
