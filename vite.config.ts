@@ -15,6 +15,14 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, 'dist/client'),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'mapbox': ['mapbox-gl', '@mapbox/mapbox-gl-draw'],
+          'element-plus': ['element-plus', '@element-plus/icons-vue'],
+        },
+      },
+    },
   },
   server: {
     port: 6754,

@@ -3,7 +3,23 @@ import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import exifr from 'exifr';
-import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+
+// 延迟加载 ffmpeg-installer（可选依赖）
+let ffmpegInstaller: { path?: string } | null = null;
+let ffmpegInstallerLoaded = false;
+
+function loadFfmpegInstaller(): void {
+  if (ffmpegInstallerLoaded) return;
+  ffmpegInstallerLoaded = true;
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+  } catch {
+    // ffmpeg-installer 是可选依赖，不存在时使用环境变量或系统 PATH
+    ffmpegInstaller = null;
+  }
+}
 
 export interface ThumbnailResult {
   path: string;
@@ -126,32 +142,30 @@ async function resolveFfmpegPath(mediaType: 'image' | 'video'): Promise<string> 
     return process.env.MEDIA_LOCATION_FFMPEG_PATH;
   }
 
-  try {
-    const installer = ffmpegInstaller as { path?: string };
-    if (!installer.path) {
-      throw new ThumbnailGenerationError('@ffmpeg-installer/ffmpeg did not provide a binary path', {
-        phase: 'ffmpeg-resolve',
-        mediaType,
-        packaged: isPackagedRuntime(),
-      });
-    }
+  // 尝试加载 @ffmpeg-installer/ffmpeg（如果已安装）
+  loadFfmpegInstaller();
 
-    if (isPackagedRuntime()) {
-      return materializeBundledFfmpeg(installer.path, mediaType);
+  if (ffmpegInstaller?.default?.path || ffmpegInstaller?.path) {
+    const installerPath = ffmpegInstaller.default?.path || ffmpegInstaller.path;
+    if (installerPath) {
+      if (isPackagedRuntime()) {
+        return materializeBundledFfmpeg(installerPath, mediaType);
+      }
+      return installerPath;
     }
-
-    return installer.path;
-  } catch (error) {
-    if (error instanceof ThumbnailGenerationError) {
-      throw error;
-    }
-
-    throw new ThumbnailGenerationError('Failed to resolve bundled ffmpeg binary', {
-      phase: 'ffmpeg-resolve',
-      mediaType,
-      packaged: isPackagedRuntime(),
-    }, error);
   }
+
+  // 回退到系统 PATH 中的 ffmpeg
+  const systemFfmpeg = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const runtimeBinFfmpeg = path.join(RUNTIME_BIN_DIR, systemFfmpeg);
+
+  // 检查 data/runtime-bin/ 目录
+  if (await nonEmptyFileExists(runtimeBinFfmpeg)) {
+    return runtimeBinFfmpeg;
+  }
+
+  // 假设系统 PATH 中有 ffmpeg
+  return systemFfmpeg;
 }
 
 async function materializeBundledFfmpeg(sourcePath: string, mediaType: 'image' | 'video'): Promise<string> {
