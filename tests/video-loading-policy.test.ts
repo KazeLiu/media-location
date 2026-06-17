@@ -23,13 +23,14 @@ describe('video loading policy', () => {
   });
 
   it('uses generated thumbnail images instead of text placeholders for map videos', async () => {
-    const amapPanel = await readSource('client/src/components/AmapPanel.vue');
+    // 媒体标记 DOM 构造已下沉到 lib/amapMarkerDom.ts，结构断言跟随落点
+    const amapMarkerDom = await readSource('client/src/lib/amapMarkerDom.ts');
     const mapboxPanel = await readSource('client/src/components/MapboxPanel.vue');
 
-    // 检查 AmapPanel
-    const amapVideoBranchStart = amapPanel.indexOf("const thumbnail = document.createElement");
-    const amapVideoBranchEnd = amapPanel.indexOf('function createMarkerVideoPlayLink');
-    const amapVideoBranch = amapPanel.slice(amapVideoBranchStart, amapVideoBranchEnd);
+    // 检查 amapMarkerDom
+    const amapVideoBranchStart = amapMarkerDom.indexOf("const thumbnail = document.createElement");
+    const amapVideoBranchEnd = amapMarkerDom.indexOf('function createMarkerVideoPlayLink');
+    const amapVideoBranch = amapMarkerDom.slice(amapVideoBranchStart, amapVideoBranchEnd);
 
     expect(amapVideoBranchStart).toBeGreaterThanOrEqual(0);
     expect(amapVideoBranchEnd).toBeGreaterThan(amapVideoBranchStart);
