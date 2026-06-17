@@ -13,6 +13,10 @@ import {
 } from '@shared/gps';
 import { getMediaFileUrl, getMediaThumbnailUrl, writeClientLog } from '@/api';
 import { loadAmap } from '@/lib/amap';
+import {
+  copyTextWithFallback,
+  createClipboardLogDetails,
+} from '@/lib/clipboard';
 import GeofenceEditPanel from './GeofenceEditPanel.vue';
 import ClusterItemList from './ClusterItemList.vue';
 import { formatAmapSuggestions, normalizeAmapLngLat, type AmapSearchSuggestion } from '@/lib/amapSearch';
@@ -776,91 +780,6 @@ async function copyLngLat(lng: number, lat: number): Promise<void> {
       : '当前地址不是 HTTPS/localhost，浏览器限制写入剪贴板，请手动复制坐标';
     ElMessage.error(`复制 ${labelText} 失败：${reason}`);
   }
-}
-
-async function copyTextWithFallback(text: string): Promise<{ method: 'clipboard' | 'fallback'; clipboardError?: unknown }> {
-  let clipboardError: unknown = null;
-
-  if (navigator.clipboard?.writeText && window.isSecureContext) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return { method: 'clipboard' };
-    } catch (error) {
-      clipboardError = error;
-    }
-  }
-
-  try {
-    if (copyTextWithTextarea(text)) {
-      return { method: 'fallback', clipboardError };
-    }
-  } catch (error) {
-    throw new Error(buildClipboardFailureMessage(clipboardError, error));
-  }
-
-  throw new Error(buildClipboardFailureMessage(clipboardError, new Error('document.execCommand returned false')));
-}
-
-function copyTextWithTextarea(text: string): boolean {
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
-  textarea.style.top = '0';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-
-  try {
-    textarea.focus();
-    textarea.select();
-    return document.execCommand('copy');
-  } finally {
-    document.body.removeChild(textarea);
-    window.getSelection()?.removeAllRanges();
-  }
-}
-
-function buildClipboardFailureMessage(clipboardError: unknown, fallbackError: unknown): string {
-  const clipboardMessage = errorToMessage(clipboardError);
-  const fallbackMessage = errorToMessage(fallbackError);
-  return `Clipboard copy failed. clipboard=${clipboardMessage}; fallback=${fallbackMessage}`;
-}
-
-function createClipboardLogDetails(error: unknown): Record<string, unknown> {
-  return {
-    error: errorToPlainObject(error),
-    isSecureContext: window.isSecureContext,
-    clipboardAvailable: Boolean(navigator.clipboard?.writeText),
-    href: window.location.href,
-    userAgent: navigator.userAgent,
-  };
-}
-
-function errorToPlainObject(error: unknown): Record<string, unknown> | null {
-  if (!error) {
-    return null;
-  }
-
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    };
-  }
-
-  return {
-    message: String(error),
-  };
-}
-
-function errorToMessage(error: unknown): string {
-  if (!error) {
-    return 'none';
-  }
-
-  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
 function renderMarkers(): void {

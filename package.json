@@ -38,6 +38,7 @@
     "earcut": "^3.0.2",
     "element-plus": "^2.14.1",
     "esbuild": "^0.25.5",
+    "happy-dom": "^20.10.5",
     "lucide-vue-next": "^0.539.0",
     "mapbox-gl": "^3.24.1",
     "sass": "^1.100.0",
