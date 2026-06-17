@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Search } from '@element-plus/icons-vue';
 import type { MediaItem, Geofence } from '@shared/contracts';
 import {
   formatGcj02Wgs84CoordinateText,
@@ -23,6 +22,9 @@ import {
 } from '@/lib/amapMarkerDom';
 import GeofenceEditPanel from './GeofenceEditPanel.vue';
 import ClusterItemList from './ClusterItemList.vue';
+import AmapSearchBar from './AmapSearchBar.vue';
+import AmapCoordinateBar from './AmapCoordinateBar.vue';
+import AmapLayerSwitch from './AmapLayerSwitch.vue';
 import { formatAmapSuggestions, normalizeAmapLngLat, type AmapSearchSuggestion } from '@/lib/amapSearch';
 import {
   getNextExpandedPath,
@@ -1254,63 +1256,26 @@ onBeforeUnmount(() => {
   <section class="map-panel">
     <div ref="mapEl" class="map-canvas"></div>
 
-    <div class="map-search">
-      <el-autocomplete
-        v-model="mapModel.searchKeyword"
-        placeholder="搜索地址"
-        :fetch-suggestions="fetchSearchSuggestions"
-        clearable
-        value-key="value"
-        popper-class="map-search-popper"
-        @select="handleSuggestionSelect"
-        @keydown.enter="searchAddress"
-      >
-        <template #append>
-          <el-button :icon="Search" :loading="mapModel.searching" @click="searchAddress" />
-        </template>
-      </el-autocomplete>
-    </div>
+    <AmapSearchBar
+      v-model:keyword="mapModel.searchKeyword"
+      :loading="mapModel.searching"
+      :fetch-suggestions="fetchSearchSuggestions"
+      @select="handleSuggestionSelect"
+      @search="searchAddress"
+    />
 
-    <div class="map-coordinate">
-      <el-button-group>
-        <el-button
-          :type="mapModel.coordinateSystem === 'gcj02' ? 'primary' : 'default'"
-          @click="mapModel.coordinateSystem = 'gcj02'"
-        >
-          {{ mouseCoordText?.gcj02Text ?? 'GCJ-02' }}
-        </el-button>
-        <el-button
-          :type="mapModel.coordinateSystem === 'wgs84' ? 'primary' : 'default'"
-          @click="mapModel.coordinateSystem = 'wgs84'"
-        >
-          {{ mouseCoordText?.wgs84Text ?? 'WGS-84' }}
-        </el-button>
-      </el-button-group>
-    </div>
+    <AmapCoordinateBar
+      v-model:system="mapModel.coordinateSystem"
+      :gcj02-text="mouseCoordText?.gcj02Text ?? null"
+      :wgs84-text="mouseCoordText?.wgs84Text ?? null"
+    />
 
-    <div class="map-layer-switch">
-      <el-checkbox
-        v-if="mapModel.layerMode === 'satellite'"
-        :model-value="mapModel.satelliteRoadNet"
-        @update:model-value="toggleSatelliteRoadNet(Boolean($event))"
-      >
-        路网
-      </el-checkbox>
-      <el-button-group>
-        <el-button
-          :type="mapModel.layerMode === 'satellite' ? 'primary' : 'default'"
-          @click="switchMapLayer('satellite')"
-        >
-          卫星图
-        </el-button>
-        <el-button
-          :type="mapModel.layerMode === 'standard' ? 'primary' : 'default'"
-          @click="switchMapLayer('standard')"
-        >
-          标准图
-        </el-button>
-      </el-button-group>
-    </div>
+    <AmapLayerSwitch
+      :layer-mode="mapModel.layerMode"
+      :road-net="mapModel.satelliteRoadNet"
+      @switch="switchMapLayer"
+      @toggle-roadnet="toggleSatelliteRoadNet"
+    />
     <GeofenceEditPanel
       v-if="drawingMode && editingGeofenceId && currentEditingPolygon"
       :geofence="geofences.find(g => g.id === editingGeofenceId)!"
