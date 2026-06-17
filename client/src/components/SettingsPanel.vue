@@ -80,13 +80,13 @@ function submit(): void {
           </el-form-item>
 
           <el-form-item label="高德安全密钥">
-            <el-input v-model="settingsModel.amapSecurityCode" clearable show-password />
+            <el-input v-model="settingsModel.amapSecurityCode" clearable/>
           </el-form-item>
         </template>
 
         <template v-if="settingsModel.mapProvider === 'mapbox'">
           <el-form-item label="Mapbox Access Token">
-            <el-input v-model="settingsModel.mapboxAccessToken" clearable show-password />
+            <el-input v-model="settingsModel.mapboxAccessToken" clearable />
           </el-form-item>
         </template>
 
