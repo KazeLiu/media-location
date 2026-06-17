@@ -82,6 +82,8 @@ let markers: any[] = [];
 let markerCluster: any = null;
 let searchMarker: any = null;
 let restoreMapDragTimer: number | null = null;
+// 拖拽落点后跳过 N 次"居中到选中项"（emit('select')+emit('place') 会触发 watch 两次），避免地图被拖拽点的新坐标拉走
+let suppressCenterOnRenderCount = 0;
 let markerDragState: {
   item: MediaItem;
   marker: any;
@@ -816,11 +818,7 @@ function renderMarkers(): void {
       markers.push(marker);
     });
 
-    const selected = props.items.find((item) => item.path === props.selectedPath);
-    if (selected?.hasGps && typeof selected.longitude === 'number' && typeof selected.latitude === 'number') {
-      const point = wgs84ToGcj02(selected.longitude, selected.latitude);
-      map.setCenter([point.lng, point.lat]);
-    }
+    centerOnSelected();
     return;
   }
 
@@ -884,6 +882,18 @@ function renderMarkers(): void {
     });
   }
 
+  centerOnSelected();
+}
+
+// 居中到当前选中项；拖拽落点后通过 suppressCenterOnRenderCount 跳过两次，避免地图被新坐标拉走
+function centerOnSelected(): void {
+  if (!map) {
+    return;
+  }
+  if (suppressCenterOnRenderCount > 0) {
+    suppressCenterOnRenderCount--;
+    return;
+  }
   const selected = props.items.find((item) => item.path === props.selectedPath);
   if (selected?.hasGps && typeof selected.longitude === 'number' && typeof selected.latitude === 'number') {
     const point = wgs84ToGcj02(selected.longitude, selected.latitude);
@@ -1080,6 +1090,8 @@ function finishMarkerDragFromPointer(): void {
   mapModel.draggingMarkerId = '';
   if (state.moved) {
     mapModel.suppressMarkerClickUntil = Date.now() + 350;
+    // 拖拽真正位移后，跳过接下来两次 renderMarkers 居中（emit('select')+emit('place') 触发 watch 两次）
+    suppressCenterOnRenderCount = 2;
   }
   scheduleRestoreMapDrag();
 
