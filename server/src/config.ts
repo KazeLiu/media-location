@@ -15,7 +15,7 @@ const DEFAULT_CONFIG: AppConfig = {
   loadVideoContent: false,
   gpsWriteMode: 'xmp',
   enableClickToCopy: false,
-  enableMarkerClustering: false, // 默认不启用聚合
+  enableMarkerClustering: true, // 默认启用聚合
 };
 
 export function getConfigPath(): string {

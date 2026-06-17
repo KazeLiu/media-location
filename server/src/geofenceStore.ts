@@ -3,8 +3,8 @@ import path from 'node:path';
 import type { GeofenceConfig } from '../../shared/contracts';
 
 const DEFAULT_CONFIG: GeofenceConfig = {
-  enabled: false,
-  showGeofencesOnMap: true,
+  enabled: true, // 默认在基本功能页面显示围栏列表
+  showGeofencesOnMap: false, // 默认不在基本功能页面显示地图围栏
   geofences: [],
 };
 
