@@ -85,3 +85,11 @@
 ```text
 风宝，帮我重新打 Windows 发布包并控制体积。请先读 AGENTS.md，检查 package.json 的依赖分类：Vue、Element Plus、lucide 等前端构建依赖不要留在 dependencies 里，避免 pkg 误打进 exe；服务端运行依赖和 FFmpeg 缩略图能力要保留。打包时优先使用 pkg 的 Brotli 压缩，并继续执行 windows-subsystem.cjs 改成 GUI 子系统。完成后运行测试/构建/打包，记录 exe 体积，再用独立端口做烟测：/api/health、/、/api/shutdown 都要通过；如果改到缩略图，额外验证 FFmpeg 缩略图路径。只提交本次打包相关改动，提交信息用中文 conventional commit。
 ```
+
+### 高德地图代码结构与测试
+
+- 触发信号：重构 `AmapPanel.vue` / `lib/amap.ts`，或新增/搬移高德标记 DOM 构造、剪贴板、搜索格式化等逻辑。
+- 根因 / 约束：(1) `vitest.config.ts` 默认 `environment: 'node'` 无 DOM，DOM 类单测直接用 `document` 会报错；(2) `tests/video-loading-policy.test.ts` 等是**源码结构断言测试**（grep 源码字符串），代码搬移落点后断言会失效；(3) 官方 `@amap/amap-jsapi-loader` 在 vite HMR 下二次 `load` 会抛「重复加载JSAPI」；(4) 巨型 Vue 组件全塞一起违背 `vue-locality-cleanup` 与 `xxxModel` 状态组织规范，但 composable 侧文件又会散落逻辑。
+- 正确做法：高德 JSAPI 用官方 `@amap/amap-jsapi-loader`（devDep，打进 `dist/client`，不进 exe）一次性 `AMapLoader.load({ version:'2.0', plugins })`，加载前配 `window._AMapSecurityConfig`，加 `window.AMap` 存在即 resolve 的 HMR 守卫；DOM 类单测在文件首行用 `// @vitest-environment happy-dom` 引入 happy-dom（devDep），不改全局 environment；拆分巨型组件按「无状态工具下沉 `client/src/lib/`（可单测）+ 纯 UI 子组件（无副作用用 `defineModel` v-model，有 AMap 实例副作用用 props+emit）+ 有状态逻辑留组件按 `mapModel`/`clusterModel`/`geofenceModel` 分块」三层；搬移被结构断言测试盯着的代码时，同步把断言指向新落点（如 marker DOM 构造移到 `lib/amapMarkerDom.ts` 后，`video-loading-policy.test.ts` 的 AmapPanel 分支断言改读该 lib，MapboxPanel 部分不动）；`reactive({ currentPolygon })` 收拢散落 `ref` 时，对 AMap 实例的深层 reactive 处理与原 `ref(.value)` 等价，无需 `markRaw`。
+- 验证方式：`npx vitest run tests/amap-search.test.ts tests/map-marker-media.test.ts tests/map-marker-layout.test.ts tests/clipboard.test.ts tests/amap-marker-dom.test.ts tests/video-loading-policy.test.ts`、`npx vue-tsc --noEmit --skipLibCheck --noImplicitAny false`、`npm run build`，并手动验证地图加载/搜索/围栏绘制编辑/单标记拖拽/聚合列表/图层切换/坐标复制。
+- 适用范围：`client/src/lib/amap.ts`、`client/src/lib/amapMarkerDom.ts`、`client/src/lib/clipboard.ts`、`client/src/lib/amapSearch.ts`、`client/src/components/AmapPanel.vue` 及其子组件 `AmapSearchBar.vue`/`AmapCoordinateBar.vue`/`AmapLayerSwitch.vue`、相关测试、高德地图代码结构相关改动。
