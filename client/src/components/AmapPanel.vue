@@ -70,6 +70,7 @@ const emit = defineEmits<{
   cancelEdit: [];
 }>();
 
+// 地图容器 ref + AMap 实例/图层/标记/围栏句柄（let，非响应式，避免深层响应式开销）
 const mapEl = ref<HTMLDivElement | null>(null);
 let map: any = null;
 let autocomplete: any = null;
@@ -95,8 +96,11 @@ let markerDragState: {
 let geofencePolygons: Map<string, any> = new Map();
 let mouseTool: any = null;
 let polygonEditor: any = null;
-const currentEditingPolygon = ref<any>(null);
-const polygonUpdateTrigger = ref(0); // 用于触发面板更新
+// Geofence block: 当前编辑的多边形实例 + 编辑器事件触发计数（驱动面板坐标更新）
+const geofenceModel = reactive({
+  currentPolygon: null as any,
+  updateTrigger: 0,
+});
 
 // Map block: owns AMap state, search text, raw AMap hover coordinate, and expanded marker path.
 const mapModel = reactive({
@@ -129,6 +133,7 @@ const mouseCoordText = computed(() => {
   return formatGcj02Wgs84CoordinateText(mapModel.mouseCoord.lng, mapModel.mouseCoord.lat);
 });
 
+// ===== 生命周期：地图加载、事件绑定与销毁 =====
 async function ensureMap(): Promise<void> {
   if (!props.amapKey || !mapEl.value || map) {
     if (!props.amapKey) {
@@ -215,6 +220,7 @@ async function ensureMap(): Promise<void> {
   }
 }
 
+// ===== 围栏：渲染、绘制、编辑、确认/取消 =====
 function renderGeofences(): void {
   if (!map) return;
 
@@ -294,7 +300,7 @@ function startDrawingGeofence(geofenceId: string): void {
     }
     // 新建围栏时，保存临时多边形并切换到编辑模式
     // 不自动保存，等待用户点击面板的确认按钮
-    currentEditingPolygon.value = polygon;
+    geofenceModel.currentPolygon = polygon;
 
     // 创建编辑器并打开编辑模式
     if (!polygonEditor) {
@@ -309,19 +315,19 @@ function startDrawingGeofence(geofenceId: string): void {
     polygonEditor.off('move');
 
     polygonEditor.on('adjust', () => {
-      polygonUpdateTrigger.value++;
+      geofenceModel.updateTrigger++;
     });
 
     polygonEditor.on('addnode', () => {
-      polygonUpdateTrigger.value++;
+      geofenceModel.updateTrigger++;
     });
 
     polygonEditor.on('removenode', () => {
-      polygonUpdateTrigger.value++;
+      geofenceModel.updateTrigger++;
     });
 
     polygonEditor.on('move', () => {
-      polygonUpdateTrigger.value++;
+      geofenceModel.updateTrigger++;
     });
 
     polygonEditor.setTarget(polygon);
@@ -370,7 +376,7 @@ function startEditingGeofence(geofenceId: string): void {
   });
 
   map.add(polygon);
-  currentEditingPolygon.value = polygon;
+  geofenceModel.currentPolygon = polygon;
 
   // 创建编辑器
   if (!polygonEditor) {
@@ -384,19 +390,19 @@ function startEditingGeofence(geofenceId: string): void {
   polygonEditor.off('move');
 
   polygonEditor.on('adjust', () => {
-    polygonUpdateTrigger.value++;
+    geofenceModel.updateTrigger++;
   });
 
   polygonEditor.on('addnode', () => {
-    polygonUpdateTrigger.value++;
+    geofenceModel.updateTrigger++;
   });
 
   polygonEditor.on('removenode', () => {
-    polygonUpdateTrigger.value++;
+    geofenceModel.updateTrigger++;
   });
 
   polygonEditor.on('move', () => {
-    polygonUpdateTrigger.value++;
+    geofenceModel.updateTrigger++;
   });
 
   polygonEditor.setTarget(polygon);
@@ -414,9 +420,9 @@ function stopDrawingOrEditing(): void {
     polygonEditor.close();
   }
 
-  if (currentEditingPolygon.value) {
-    currentEditingPolygon.value.setMap(null);
-    currentEditingPolygon.value = null;
+  if (geofenceModel.currentPolygon) {
+    geofenceModel.currentPolygon.setMap(null);
+    geofenceModel.currentPolygon = null;
   }
 
   renderGeofences();
@@ -424,12 +430,12 @@ function stopDrawingOrEditing(): void {
 
 // 获取当前编辑的坐标（响应式计算）
 const currentEditingCoordinates = computed(() => {
-  // 依赖 polygonUpdateTrigger 来触发更新
-  polygonUpdateTrigger.value;
+  // 依赖 geofenceModel.updateTrigger 来触发更新
+  geofenceModel.updateTrigger;
 
-  if (!currentEditingPolygon.value) return [];
+  if (!geofenceModel.currentPolygon) return [];
 
-  const path = currentEditingPolygon.value.getPath();
+  const path = geofenceModel.currentPolygon.getPath();
   return path.map((lngLat: any) => {
     const wgs = gcj02ToWgs84(lngLat.lng, lngLat.lat);
     return { longitude: wgs.lng, latitude: wgs.lat };
@@ -438,7 +444,7 @@ const currentEditingCoordinates = computed(() => {
 
 // 处理确认保存
 function handleConfirmEdit(): void {
-  if (!props.editingGeofenceId || !currentEditingPolygon.value) return;
+  if (!props.editingGeofenceId || !geofenceModel.currentPolygon) return;
 
   const coordinates = currentEditingCoordinates.value;
   if (coordinates.length < 3) {
@@ -456,9 +462,9 @@ function handleConfirmEdit(): void {
   }
 
   // 使用 setMap(null) 而不是 map.remove() 来移除多边形
-  if (currentEditingPolygon.value) {
-    currentEditingPolygon.value.setMap(null);
-    currentEditingPolygon.value = null;
+  if (geofenceModel.currentPolygon) {
+    geofenceModel.currentPolygon.setMap(null);
+    geofenceModel.currentPolygon = null;
   }
 
   const geofence = props.geofences.find(g => g.id === props.editingGeofenceId);
@@ -479,6 +485,7 @@ function handleCancelEdit(): void {
   emit('cancelEdit');
 }
 
+// ===== 拖拽落点：单个/批量媒体拖入地图 =====
 function handleDragOver(event: DragEvent): void {
   event.preventDefault();
 }
@@ -572,6 +579,7 @@ function generateRandomPositions(
 }
 
 
+// ===== 地址搜索：联想、定位、搜索结果标记 =====
 async function searchAddress(): Promise<void> {
   if (!mapModel.searchKeyword.trim()) {
     return;
@@ -673,6 +681,7 @@ function clearSearchMarker(): void {
   searchMarker = null;
 }
 
+// ===== 图层切换：标准/卫星/路网 =====
 function switchMapLayer(mode: MapLayerMode): void {
   if (mode === 'standard') {
     mapModel.layerMode = 'standard';
@@ -731,6 +740,7 @@ function setRoadNetVisible(visible: boolean): void {
   roadNetLayer.setMap?.(null);
 }
 
+// ===== 剪贴板：坐标复制（底层原语见 lib/clipboard.ts） =====
 async function copyLngLat(lng: number, lat: number): Promise<void> {
   const coordinateText = formatGcj02Wgs84CoordinateText(lng, lat);
   const text = getCoordinateValueTextForSystem(coordinateText, mapModel.coordinateSystem);
@@ -760,6 +770,7 @@ async function copyLngLat(lng: number, lat: number): Promise<void> {
   }
 }
 
+// ===== 标记渲染：普通/聚合、标记内容构造（DOM 见 lib/amapMarkerDom.ts） =====
 function renderMarkers(): void {
   if (!map || !window.AMap) {
     return;
@@ -983,6 +994,7 @@ function createMarkerContent(item: MediaItem, expanded: boolean, getMarker: () =
   return container;
 }
 
+// ===== 标记拖拽：pointer 事件驱动，拖动改坐标 =====
 function beginMarkerDrag(item: MediaItem, marker: any, element: HTMLElement, event: PointerEvent): void {
   if (!marker || !map || !window.AMap) {
     return;
@@ -1122,6 +1134,7 @@ function setMapDragEnabled(enabled: boolean): void {
 }
 
 // 关闭聚合列表并恢复聚合点样式
+// ===== 聚合列表：点击展开、媒体变化后更新 =====
 function handleCloseClusterList(): void {
   clusterModel.listVisible = false;
   clusterModel.currentClusterKey = '';
@@ -1277,7 +1290,7 @@ onBeforeUnmount(() => {
       @toggle-roadnet="toggleSatelliteRoadNet"
     />
     <GeofenceEditPanel
-      v-if="drawingMode && editingGeofenceId && currentEditingPolygon"
+      v-if="drawingMode && editingGeofenceId && geofenceModel.currentPolygon"
       :geofence="geofences.find(g => g.id === editingGeofenceId)!"
       :coordinates="currentEditingCoordinates"
       @confirm="handleConfirmEdit"
