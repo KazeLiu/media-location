@@ -12,7 +12,7 @@ import {
   wgs84ToGcj02,
 } from '@shared/gps';
 import { getMediaFileUrl, getMediaThumbnailUrl, writeClientLog } from '@/api';
-import { loadAmap, loadAmapPlugins } from '@/lib/amap';
+import { loadAmap } from '@/lib/amap';
 import GeofenceEditPanel from './GeofenceEditPanel.vue';
 import ClusterItemList from './ClusterItemList.vue';
 import { formatAmapSuggestions, normalizeAmapLngLat, type AmapSearchSuggestion } from '@/lib/amapSearch';
@@ -131,9 +131,7 @@ async function ensureMap(): Promise<void> {
   }
 
   try {
-    await loadAmap(props.amapKey, props.amapSecurityCode);
-    const AMap = window.AMap;
-    await loadAmapPlugins([
+    await loadAmap(props.amapKey, props.amapSecurityCode, [
       'AMap.ToolBar',
       'AMap.Scale',
       'AMap.AutoComplete',
@@ -142,6 +140,7 @@ async function ensureMap(): Promise<void> {
       'AMap.PolygonEditor',
       'AMap.MarkerCluster',
     ]);
+    const AMap = window.AMap;
 
     map = new AMap.Map(mapEl.value, {
       zoom: INITIAL_ZOOM,

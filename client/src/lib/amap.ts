@@ -1,39 +1,58 @@
-let amapLoader: Promise<void> | null = null;
-const pluginLoaders = new Map<string, Promise<void>>();
+import AMapLoader from '@amap/amap-jsapi-loader';
 
 declare global {
   interface Window {
     AMap?: any;
     _AMapSecurityConfig?: {
       securityJsCode?: string;
+      serviceHost?: string;
     };
   }
 }
 
-export function loadAmap(key: string, securityCode = ''): Promise<void> {
+// loader 单例：首次加载后缓存 Promise；失败置 null 允许重试
+let amapPromise: Promise<void> | null = null;
+
+/**
+ * 加载高德 JSAPI v2.0（官方 loader 一次性加载）。
+ * - 加载前必须先配置安全密钥（skill 安全铁律）
+ * - 单例守卫；HMR 下 window.AMap 已存在则直接 resolve，避免重复 load 报错
+ * @param key 高德 Web 端 Key
+ * @param securityCode 安全密钥（开发环境明文）
+ * @param plugins 预加载插件列表，并入单次 load 调用
+ */
+export function loadAmap(key: string, securityCode = '', plugins: string[] = []): Promise<void> {
   applyAmapSecurityCode(securityCode);
 
+  // HMR / 重复加载守卫：官方 loader 二次 load 会抛「重复加载JSAPI」
   if (window.AMap) {
     return Promise.resolve();
   }
 
-  if (amapLoader) {
-    return amapLoader;
+  if (amapPromise) {
+    return amapPromise;
   }
 
-  amapLoader = new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load AMap script'));
-    document.head.appendChild(script);
-  });
+  amapPromise = AMapLoader.load({
+    key,
+    version: '2.0',
+    plugins,
+  })
+    .then(() => {
+      // 加载完成：window.AMap 由 loader 挂到全局
+    })
+    .catch((error: unknown) => {
+      // 失败时置空，允许后续重试
+      amapPromise = null;
+      throw error instanceof Error
+        ? error
+        : new Error('Failed to load AMap script');
+    });
 
-  return amapLoader;
+  return amapPromise;
 }
 
+/** 配置高德安全密钥；必须在 load 之前执行。空值跳过。 */
 function applyAmapSecurityCode(securityCode: string): void {
   const normalized = securityCode.trim();
   if (!normalized) {
@@ -44,42 +63,4 @@ function applyAmapSecurityCode(securityCode: string): void {
     ...window._AMapSecurityConfig,
     securityJsCode: normalized,
   };
-}
-
-export async function loadAmapPlugins(plugins: string[]): Promise<void> {
-  if (!window.AMap) {
-    throw new Error('AMap script is not loaded.');
-  }
-
-  await Promise.all(plugins.map((plugin) => loadAmapPlugin(plugin)));
-}
-
-function loadAmapPlugin(plugin: string): Promise<void> {
-  const cached = pluginLoaders.get(plugin);
-  if (cached) {
-    return cached;
-  }
-
-  const loader = new Promise<void>((resolve, reject) => {
-    window.AMap.plugin(plugin, () => {
-      if (isPluginAvailable(plugin)) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(`AMap plugin is unavailable: ${plugin}`));
-    });
-  });
-
-  pluginLoaders.set(plugin, loader);
-  return loader;
-}
-
-function isPluginAvailable(plugin: string): boolean {
-  const className = plugin.split('.').pop();
-  if (className === 'AutoComplete' || className === 'Autocomplete') {
-    return Boolean(window.AMap?.Autocomplete || window.AMap?.AutoComplete);
-  }
-
-  return Boolean(className && window.AMap?.[className]);
 }

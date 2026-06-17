@@ -21,11 +21,9 @@
     "fast-xml-parser": "^4.5.3"
   },
   "devDependencies": {
+    "@amap/amap-jsapi-loader": "^1.0.1",
     "@element-plus/icons-vue": "^2.3.2",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "element-plus": "^2.14.1",
-    "lucide-vue-next": "^0.539.0",
-    "mapbox-gl": "^3.24.1",
     "@mapbox/mapbox-gl-draw": "^1.5.1",
     "@types/cors": "^2.8.19",
     "@types/earcut": "^3.0.0",
@@ -38,7 +36,10 @@
     "@yao-pkg/pkg": "^6.0.0",
     "concurrently": "^9.2.0",
     "earcut": "^3.0.2",
+    "element-plus": "^2.14.1",
     "esbuild": "^0.25.5",
+    "lucide-vue-next": "^0.539.0",
+    "mapbox-gl": "^3.24.1",
     "sass": "^1.100.0",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
