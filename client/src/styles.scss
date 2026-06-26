@@ -539,7 +539,7 @@ body {
   top: 15px;
   left: 220px;
   z-index: 28;
-  width: min(215px, 100% - 360px);
+  width: min(400px, 100% - 360px);
   box-shadow: var(--shadow);
 
   .el-autocomplete {

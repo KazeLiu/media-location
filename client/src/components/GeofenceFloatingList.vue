@@ -76,8 +76,7 @@ function handleDrop(event: DragEvent, geofence: Geofence): void {
 .geofence-floating-list {
   position: absolute;
   left: 16px;
-  top: 110px;
-  transform: translateY(-50%);
+  top: 60px;
   width: 200px;
   max-height: 400px;
   background: rgba(255, 255, 255, 0.95);
