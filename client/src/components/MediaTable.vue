@@ -56,6 +56,8 @@ const batchOperationModel = reactive({
   enabled: false,
   selectedPaths: new Set<string>(),
   dragElement: null as HTMLElement | null,
+  /** shift 范围选取：记录上次点击的 path */
+  lastSelectedPath: '',
 });
 
 const selectedCount = computed(() => batchOperationModel.selectedPaths.size);
@@ -98,6 +100,11 @@ const mediaSections = computed<MediaSection[]>(() => {
 
   return sections;
 });
+
+/** 所有当前可见媒体项（已展开的 section 拍平），用于 shift 范围选取 */
+const flatVisibleItems = computed<MediaItem[]>(() =>
+  mediaSections.value.flatMap(s => (s.collapsed ? [] : s.items))
+);
 
 function togglePinSection(): void {
   pinSectionModel.collapsed = !pinSectionModel.collapsed;
@@ -215,15 +222,34 @@ function toggleBatchMode(): void {
 
 function clearBatchSelection(): void {
   batchOperationModel.selectedPaths.clear();
+  batchOperationModel.lastSelectedPath = '';
 }
 
 function toggleSelection(path: string, event: MouseEvent): void {
   event.stopPropagation();
+
+  // shift+点击：范围选取，从上次点击到当前全部选中
+  if (event.shiftKey && batchOperationModel.lastSelectedPath) {
+    const items = flatVisibleItems.value;
+    const fromIdx = items.findIndex(i => i.path === batchOperationModel.lastSelectedPath);
+    const toIdx = items.findIndex(i => i.path === path);
+    if (fromIdx !== -1 && toIdx !== -1) {
+      const [start, end] = fromIdx < toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
+      for (let i = start; i <= end; i++) {
+        batchOperationModel.selectedPaths.add(items[i].path);
+      }
+      // shift 范围选取不更新 lastSelectedPath，保持以第一次点击为锚点
+      return;
+    }
+  }
+
+  // 普通点击：切换单项，并记录为 shift 锚点
   if (batchOperationModel.selectedPaths.has(path)) {
     batchOperationModel.selectedPaths.delete(path);
   } else {
     batchOperationModel.selectedPaths.add(path);
   }
+  batchOperationModel.lastSelectedPath = path;
 }
 
 function selectAllMedia(): void {

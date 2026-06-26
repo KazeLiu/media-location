@@ -175,9 +175,17 @@ async function saveGeofences(config: GeofenceConfig): Promise<void> {
   }
 }
 
+/** 非安全上下文（HTTP 局域网/Tailscale）下 crypto.randomUUID 不可用时的降级实现 */
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 function handleCreateGeofence(data: { name: string; color: string }): void {
   const newGeofence: Geofence = {
-    id: crypto.randomUUID(),
+    id: (crypto.randomUUID?.() ?? generateUUID()),
     name: data.name,
     color: data.color,
     coordinates: [],
@@ -263,6 +271,14 @@ function handleGeofenceEdited(id: string, coordinates: GeofenceCoordinate[]): vo
 }
 
 function handleCancelGeofenceEdit(): void {
+  // 新建围栏取消时（coordinates 为空说明还未画完），移除刚加入的空围栏
+  const id = geofenceModel.editingGeofenceId;
+  if (id) {
+    const geofence = geofenceModel.geofences.find(g => g.id === id);
+    if (geofence && geofence.coordinates.length === 0) {
+      geofenceModel.geofences = geofenceModel.geofences.filter(g => g.id !== id);
+    }
+  }
   geofenceModel.editingGeofenceId = '';
   geofenceModel.drawingMode = false;
 }
