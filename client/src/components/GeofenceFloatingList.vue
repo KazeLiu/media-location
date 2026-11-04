@@ -73,12 +73,19 @@ function handleDrop(event: DragEvent, geofence: Geofence): void {
 </template>
 
 <style scoped lang="scss">
+$row-height: 36px;
+$row-gap: 4px;
+$list-padding: 8px;
+
 .geofence-floating-list {
+  $bottom-offset: 56px;
+
   position: absolute;
-  left: 16px;
-  top: 60px;
-  width: 200px;
-  max-height: 400px;
+  left: 14px;
+  bottom: $bottom-offset;
+  width: min(200px, calc(100% - 28px));
+  // 为顶部搜索框和底部坐标控件留出空间。
+  max-height: calc(100% - 100px - $bottom-offset);
   background: rgba(255, 255, 255, 0.95);
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
@@ -89,6 +96,7 @@ function handleDrop(event: DragEvent, geofence: Geofence): void {
 }
 
 .floating-header {
+  flex: none;
   padding: 12px 16px;
   font-weight: 600;
   font-size: 14px;
@@ -97,9 +105,13 @@ function handleDrop(event: DragEvent, geofence: Geofence): void {
 }
 
 .floating-content {
-  flex: 1;
+  display: grid;
+  grid-auto-rows: $row-height;
+  gap: $row-gap;
+  max-height: 10 * $row-height + 9 * $row-gap + 2 * $list-padding;
   overflow-y: auto;
-  padding: 8px;
+  overscroll-behavior: contain;
+  padding: $list-padding;
 }
 
 .floating-item {
@@ -109,8 +121,7 @@ function handleDrop(event: DragEvent, geofence: Geofence): void {
   padding: 8px 12px;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.2s;
-  margin-bottom: 4px;
+  transition: background-color 0.2s;
 
   &:hover {
     background: var(--el-color-primary-light-9);
@@ -118,7 +129,8 @@ function handleDrop(event: DragEvent, geofence: Geofence): void {
 
   &.is-hovered {
     background: var(--el-color-primary-light-8);
-    border: 2px dashed var(--el-color-primary);
+    outline: 2px dashed var(--el-color-primary);
+    outline-offset: -2px;
   }
 }
 

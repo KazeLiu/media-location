@@ -87,12 +87,15 @@ function handleEditArea(geofence?: Geofence): void {
 <template>
   <div class="geofence-tab">
     <div class="geofence-header">
-      <el-switch
-        :model-value="enabled"
-        :disabled="busy"
-        active-text="在基本功能显示围栏列表"
-        @change="handleEnabledChange"
-      />
+      <div>
+        <el-switch
+          :model-value="enabled"
+          :disabled="busy"
+          active-text="在基本功能显示围栏列表"
+          @change="handleEnabledChange"
+        />
+        <p class="geofence-help">开启后，将照片缩略图拖到列表中的围栏，即可将照片随机定位到该围栏内。</p>
+      </div>
       <el-switch
         :model-value="showGeofencesOnMap"
         :disabled="busy"
@@ -183,6 +186,13 @@ function handleEditArea(geofence?: Geofence): void {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.geofence-help {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .geofence-actions {
