@@ -25,7 +25,8 @@ describe('media card interactions', () => {
     expect(cardOpening).not.toContain('draggable="true"');
     expect(cardOpening).not.toContain('@dragstart');
     expect(previewBlock).toContain('draggable="true"');
-    expect(previewBlock).toContain("@dragstart=\"emit('dragStart', item, $event)\"");
+    expect(previewBlock).toContain('@dragstart="handleDragStart(item, $event)"');
+    expect(source).toContain("emit('dragStart', item, event)");
   });
 
   it('copies the filename from the filename control', async () => {

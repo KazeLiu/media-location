@@ -1,30 +1,11 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { buildGpsTags, buildXmpWithGps, type GpsValue } from '../../shared/xmp';
 
-export interface GpsValue {
-  latitude: number;
-  longitude: number;
-}
+export { buildXmpWithGps } from '../../shared/xmp';
+export type { GpsValue } from '../../shared/xmp';
 
 const GPS_TAGS = ['GPSLatitude', 'GPSLatitudeRef', 'GPSLongitude', 'GPSLongitudeRef'];
-
-export function buildXmpWithGps(gps: GpsValue): string {
-  const tags = buildGpsTags(gps);
-  return [
-    "<?xpacket begin='﻿' id='W5M0MpCehiHzreSzNTczkc9d'?>",
-    "<x:xmpmeta xmlns:x='adobe:ns:meta/' x:xmptk='Image::ExifTool 12.40'>",
-    "<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>",
-    '',
-    " <rdf:Description rdf:about=''",
-    "  xmlns:exif='http://ns.adobe.com/exif/1.0/'>",
-    ...tags.map((tag) => `  ${tag}`),
-    ' </rdf:Description>',
-    '</rdf:RDF>',
-    '</x:xmpmeta>',
-    "<?xpacket end='w'?>",
-    '',
-  ].join('\n');
-}
 
 export function updateXmpGps(source: string, gps: GpsValue): string {
   if (!source.trim()) {
@@ -90,24 +71,6 @@ export async function writeGpsToXmpFile(xmpPath: string, gps: GpsValue, backupBe
   const next = updateXmpGps(source, gps);
   await fs.writeFile(xmpPath, next, 'utf8');
   return xmpPath;
-}
-
-function buildGpsTags(gps: GpsValue): string[] {
-  return [
-    `<exif:GPSLatitude>${formatCoordinateTag(gps.latitude, 'lat')}</exif:GPSLatitude>`,
-    `<exif:GPSLongitude>${formatCoordinateTag(gps.longitude, 'lng')}</exif:GPSLongitude>`,
-  ];
-}
-
-function formatCoordinateTag(value: number, axis: 'lat' | 'lng'): string {
-  const absolute = Math.abs(value);
-  const degrees = Math.floor(absolute);
-  const minutes = (absolute - degrees) * 60;
-  const direction = axis === 'lat'
-    ? value < 0 ? 'S' : 'N'
-    : value < 0 ? 'W' : 'E';
-
-  return `${degrees},${minutes.toFixed(5)}${direction}`;
 }
 
 function parseCoordinateTag(raw: string | null, explicitRef?: string): number | null {

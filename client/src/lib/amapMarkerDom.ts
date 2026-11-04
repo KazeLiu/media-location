@@ -5,6 +5,7 @@
  */
 import type { MediaItem } from '@shared/contracts';
 import { getMediaFileUrl, getMediaThumbnailUrl } from '@/api';
+import { isBrowserMode, requestBrowserMediaThumbnail } from './browserMediaRegistry';
 import {
   getMapMarkerMediaMode,
   shouldShowMapImagePreviewButton,
@@ -60,12 +61,22 @@ export function createMarkerMediaElement(item: MediaItem): HTMLElement {
   if (mediaMode === 'image') {
     const media = document.createElement('img');
     media.className = 'marker-media';
-    media.src = getMediaThumbnailUrl(item.path);
     media.alt = item.name;
     media.draggable = false;
     media.onerror = () => {
       media.classList.add('marker-media-fallback');
     };
+    const url = getMediaThumbnailUrl(item.path);
+    if (url) media.src = url;
+    else media.classList.add('marker-media-fallback');
+    if (isBrowserMode() && !url) {
+      // 地图标记是原生 DOM，只更新这一张图片，不重建整个地图。
+      void requestBrowserMediaThumbnail(item.path).then((thumbnailUrl) => {
+        if (!thumbnailUrl) return;
+        media.classList.remove('marker-media-fallback');
+        media.src = thumbnailUrl;
+      });
+    }
     return media;
   }
 
@@ -73,6 +84,13 @@ export function createMarkerMediaElement(item: MediaItem): HTMLElement {
   thumbnail.className = 'marker-media marker-video-thumbnail';
   thumbnail.setAttribute('role', 'img');
   thumbnail.setAttribute('aria-label', `${item.name} 视频缩略图`);
+  if (isBrowserMode()) {
+    thumbnail.classList.add('marker-video-placeholder');
+    const icon = document.createElement('span');
+    icon.className = 'marker-video-cover-icon';
+    thumbnail.appendChild(icon);
+    return thumbnail;
+  }
 
   const image = document.createElement('img');
   image.className = 'marker-video-frame';

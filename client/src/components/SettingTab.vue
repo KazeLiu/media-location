@@ -6,6 +6,7 @@ import { Promotion } from '@element-plus/icons-vue';
 const props = defineProps<{
   config: AppConfig;
   busy: boolean;
+  browserMode?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -43,7 +44,7 @@ function submit(): void {
   emit('save', {
     ...props.config,
     port: settingsModel.port,
-    mapProvider: settingsModel.mapProvider,
+    mapProvider: props.browserMode ? 'amap' : settingsModel.mapProvider,
     amapKey: settingsModel.amapKey.trim(),
     amapSecurityCode: settingsModel.amapSecurityCode.trim(),
     mapboxAccessToken: settingsModel.mapboxAccessToken.trim(),
@@ -59,18 +60,18 @@ function submit(): void {
   <div class="setting-tab-content">
     <el-scrollbar class="setting-scrollbar">
       <el-form label-position="top" class="settings-form">
-        <el-form-item label="端口">
+        <el-form-item v-if="!browserMode" label="端口">
           <el-input-number v-model="settingsModel.port" :min="1" :max="65535" controls-position="right" />
         </el-form-item>
 
-        <el-form-item label="地图引擎">
+        <el-form-item v-if="!browserMode" label="地图引擎">
           <el-radio-group v-model="settingsModel.mapProvider" class="button-group">
             <el-radio-button value="amap">高德地图</el-radio-button>
             <el-radio-button value="mapbox">Mapbox</el-radio-button>
           </el-radio-group>
         </el-form-item>
 
-        <template v-if="settingsModel.mapProvider === 'amap'">
+        <template v-if="browserMode || settingsModel.mapProvider === 'amap'">
           <el-form-item label="高德 Web(JS API) Key">
             <el-input v-model="settingsModel.amapKey" clearable />
           </el-form-item>
@@ -80,13 +81,13 @@ function submit(): void {
           </el-form-item>
         </template>
 
-        <template v-if="settingsModel.mapProvider === 'mapbox'">
+        <template v-if="!browserMode && settingsModel.mapProvider === 'mapbox'">
           <el-form-item label="Mapbox Access Token">
             <el-input v-model="settingsModel.mapboxAccessToken" clearable />
           </el-form-item>
         </template>
 
-        <el-form-item label="GPS 写入方式">
+        <el-form-item v-if="!browserMode" label="GPS 写入方式">
           <el-radio-group v-model="settingsModel.gpsWriteMode" class="button-group">
             <el-radio-button value="xmp">XMP 侧车文件（推荐）</el-radio-button>
             <el-radio-button value="exif">直接写入图片 EXIF</el-radio-button>
@@ -103,6 +104,7 @@ function submit(): void {
           <span class="form-tip">开启后密集点位会自动聚合成圆形气泡</span>
         </el-form-item>
       </el-form>
+      <p v-if="browserMode" class="browser-settings-note">设置仅保存在当前浏览器；媒体文件不会上传到本项目后端。</p>
     </el-scrollbar>
 
     <footer class="setting-footer">
@@ -186,5 +188,12 @@ function submit(): void {
   margin-left: 12px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.browser-settings-note {
+  margin: 14px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 </style>

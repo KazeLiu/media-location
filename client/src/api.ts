@@ -7,6 +7,7 @@ import type {
   FolderPickerShortcuts,
   GeofenceConfig,
 } from '@shared/contracts';
+import { getBrowserMediaThumbnailUrl, getBrowserMediaUrl, isBrowserMode, requestBrowserMediaThumbnail } from './lib/browserMediaRegistry';
 
 const API_BASE = '/api';
 
@@ -78,10 +79,15 @@ export function getFolderPickerShortcuts(): Promise<FolderPickerShortcuts> {
 }
 
 export function getMediaThumbnailUrl(path: string): string {
+  if (isBrowserMode()) {
+    void requestBrowserMediaThumbnail(path);
+    return getBrowserMediaThumbnailUrl(path) ?? '';
+  }
   return `${API_BASE}/media/thumbnail?path=${encodeURIComponent(path)}`;
 }
 
 export function getMediaFileUrl(path: string): string {
+  if (isBrowserMode()) return getBrowserMediaUrl(path) ?? '';
   return `${API_BASE}/media/file?path=${encodeURIComponent(path)}`;
 }
 
@@ -93,6 +99,7 @@ export function setMediaGps(payload: { path: string; latitude: number; longitude
 }
 
 export function writeClientLog(payload: ClientLogPayload): Promise<{ ok: boolean }> {
+  if (isBrowserMode()) return Promise.resolve({ ok: true });
   return requestJson<{ ok: boolean }>('/client-log', {
     method: 'POST',
     body: JSON.stringify(payload),

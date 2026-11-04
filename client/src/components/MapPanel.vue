@@ -36,6 +36,7 @@ const emit = defineEmits<{
   error: [message: string];
   geofenceDrawn: [id: string, coordinates: GeofenceCoordinate[]];
   geofenceEdited: [id: string, coordinates: GeofenceCoordinate[]];
+  cancelEdit: [];
 }>();
 
 const currentMapComponent = computed(() => {
@@ -65,6 +66,10 @@ function handleGeofenceDrawn(id: string, coords: GeofenceCoordinate[]): void {
 function handleGeofenceEdited(id: string, coords: GeofenceCoordinate[]): void {
   emit('geofenceEdited', id, coords);
 }
+
+function handleCancelEdit(): void {
+  emit('cancelEdit');
+}
 </script>
 
 <template>
@@ -84,6 +89,7 @@ function handleGeofenceEdited(id: string, coords: GeofenceCoordinate[]): void {
     @place="handlePlace"
     @geofence-drawn="handleGeofenceDrawn"
     @geofence-edited="handleGeofenceEdited"
+    @cancel-edit="handleCancelEdit"
     @ready="handleReady"
     @error="handleError"
   >

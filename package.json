@@ -7,12 +7,15 @@
     "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "tsx watch server/src/index.ts",
     "dev:client": "vite",
+    "dev:browser": "vite --config vite.browser.config.ts --host 127.0.0.1",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
+    "build:browser": "vite build --config vite.browser.config.ts",
     "build:server": "esbuild server/src/index.ts --bundle --platform=node --format=cjs --target=node20 --external:exifr --external:@ffmpeg-installer/ffmpeg --outfile=dist/server/index.cjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package:win": "npm run build && pkg --config package.json dist/server/index.cjs --targets node22-win-x64 --output dist/media-location.exe && node scripts/windows-subsystem.cjs dist/media-location.exe"
+    "package:win": "npm run build && pkg --config package.json dist/server/index.cjs --targets node22-win-x64 --output dist/media-location.exe && node scripts/windows-subsystem.cjs dist/media-location.exe",
+    "package:browser": "npm run build:browser && node scripts/package-browser.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -38,6 +41,7 @@
     "earcut": "^3.0.2",
     "element-plus": "^2.14.1",
     "esbuild": "^0.25.5",
+    "fflate": "^0.8.3",
     "happy-dom": "^20.10.5",
     "lucide-vue-next": "^0.539.0",
     "mapbox-gl": "^3.24.1",

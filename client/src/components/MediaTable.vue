@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue';
 import { ElMessage } from 'element-plus';
-import { ArrowDown, ArrowRight, Check, Close, Location, Picture, Search, VideoCamera } from '@element-plus/icons-vue';
+import { ArrowDown, ArrowRight, Check, Close, Delete, Location, Picture, Search, VideoCamera } from '@element-plus/icons-vue';
 import { Pin, PinOff } from 'lucide-vue-next';
 import type { MediaItem } from '@shared/contracts';
 import { getMediaFileUrl, getMediaThumbnailUrl } from '@/api';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   currentDir: string;
   items: MediaItem[];
   pinnedItems: MediaItem[];
@@ -17,7 +17,8 @@ const props = defineProps<{
   loading: boolean;
   loadingMore: boolean;
   collapsed: boolean;
-}>();
+  browserMode?: boolean;
+}>(), { browserMode: false });
 
 const emit = defineEmits<{
   select: [item: MediaItem];
@@ -28,6 +29,7 @@ const emit = defineEmits<{
   filterChange: [value: string];
   loadMore: [];
   toggle: [];
+  remove: [item: MediaItem];
 }>();
 
 type MediaSectionKey = 'current' | 'pinned';
@@ -325,7 +327,7 @@ watch(() => props.currentDir, () => {
       <el-space wrap :size="6" alignment="center">
         <el-tag size="small" effect="plain">已加载 {{ items.length }}/{{ mediaTotal }} 个</el-tag>
         <el-tag size="small" type="warning" effect="plain">无经纬度 {{ currentMissingGpsCount }} 个</el-tag>
-        <el-tag size="small" type="info" effect="plain">固定 {{ pinnedItems.length }} 个</el-tag>
+        <el-tag v-if="!browserMode" size="small" type="info" effect="plain">固定 {{ pinnedItems.length }} 个</el-tag>
       </el-space>
     </header>
 
@@ -378,7 +380,7 @@ watch(() => props.currentDir, () => {
               {{ section.title }}
             </el-button>
 
-            <el-tooltip v-if="section.key === 'current'" :content="currentDirPinTooltip" placement="top">
+            <el-tooltip v-if="section.key === 'current' && !browserMode" :content="currentDirPinTooltip" placement="top">
               <el-button
                 :icon="currentDirAllPinned ? PinOff : Pin"
                 size="small"
@@ -390,7 +392,7 @@ watch(() => props.currentDir, () => {
                 {{ currentDirAllPinned ? '取消固定当前目录' : '固定当前目录' }}
               </el-button>
             </el-tooltip>
-            <el-tag v-else size="small" type="info" effect="plain">{{ pinnedItems.length }} 个</el-tag>
+            <el-tag v-else-if="section.key !== 'current'" size="small" type="info" effect="plain">{{ pinnedItems.length }} 个</el-tag>
           </div>
 
           <template v-if="!section.collapsed && section.items.length">
@@ -424,8 +426,11 @@ watch(() => props.currentDir, () => {
                     lazy
                     class="preview-image"
                   >
+                    <template #placeholder>
+                      <div class="preview-fallback" title="正在生成缩略图"><el-icon><Picture /></el-icon></div>
+                    </template>
                     <template #error>
-                      <div class="preview-fallback">
+                      <div class="preview-fallback" title="暂无可用缩略图，仍可标注位置">
                         <el-icon><Picture /></el-icon>
                       </div>
                     </template>
@@ -450,6 +455,7 @@ watch(() => props.currentDir, () => {
                     :aria-label="`${item.name} 视频缩略图`"
                   >
                     <el-image
+                      v-if="!browserMode"
                       :src="getMediaThumbnailUrl(item.path)"
                       fit="contain"
                       lazy
@@ -461,6 +467,9 @@ watch(() => props.currentDir, () => {
                         </div>
                       </template>
                     </el-image>
+                    <div v-else class="video-cover-fallback">
+                      <el-icon><VideoCamera /></el-icon>
+                    </div>
                     <a
                       class="video-play-badge"
                       :href="getMediaFileUrl(item.path)"
@@ -488,6 +497,14 @@ watch(() => props.currentDir, () => {
                         <span class="media-name">{{ item.name }}</span>
                       </button>
                     </el-tooltip>
+                    <el-button
+                      v-if="browserMode"
+                      link
+                      size="small"
+                      :icon="Delete"
+                      :aria-label="`移除 ${item.name}`"
+                      @click.stop="emit('remove', item)"
+                    />
                   </div>
 
                   <div v-if="item.hasGps" class="media-card-status-row">
@@ -496,7 +513,7 @@ watch(() => props.currentDir, () => {
                       {{ formatCoordinate(item) }}
                     </el-tag>
 
-                    <el-tooltip :content="getPinTooltip(item)" placement="top">
+                    <el-tooltip v-if="!browserMode" :content="getPinTooltip(item)" placement="top">
                       <el-button
                         link
                         size="small"
@@ -543,7 +560,7 @@ watch(() => props.currentDir, () => {
                       无位置信息
                     </el-tag>
 
-                    <el-tooltip :content="getPinTooltip(item)" placement="top">
+                    <el-tooltip v-if="!browserMode" :content="getPinTooltip(item)" placement="top">
                       <el-button
                         link
                         size="small"
