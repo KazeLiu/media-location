@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive } from 'vue';
-import { ElMessage } from 'element-plus';
+import { computed, onBeforeUnmount, onMounted, reactive, watch } from 'vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { Download } from '@element-plus/icons-vue';
 import type { AppConfig, Geofence, GeofenceConfig, GeofenceCoordinate, MediaItem } from '@shared/contracts';
 import BrowserMediaUpload from './components/BrowserMediaUpload.vue';
@@ -10,6 +10,7 @@ import AmapPanel from './components/AmapPanel.vue';
 import MediaTable from './components/MediaTable.vue';
 import ResizeHandle from './components/ResizeHandle.vue';
 import SettingTab from './components/SettingTab.vue';
+import { openBrowserDraft, readBrowserDraft, writeBrowserDraft, type BrowserDraftItem } from './lib/browserDraft';
 import { classifyBrowserMedia, createBrowserMediaItem, createXmpZip, isUsableGps, safeBrowserMediaName } from './lib/browserMedia';
 import { clearBrowserMedia, registerBrowserMedia, removeBrowserMedia } from './lib/browserMediaRegistry';
 import { getRandomPointInPolygon } from './lib/geofenceUtils';
@@ -18,10 +19,11 @@ const SETTINGS_KEY = 'media-location:browser-settings:v1';
 const GEOFENCES_KEY = 'media-location:browser-geofences:v1';
 const WIDTH_KEY = 'media-location:browser-left-width';
 const PAGE_SIZE = 120;
+const DRAFT_SAVE_INTERVAL_MS = 5000;
 
 const settingsModel = reactive({ config: loadSettings(), busy: false });
 const mediaModel = reactive({
-  items: [] as MediaItem[],
+  items: [] as BrowserDraftItem[],
   filter: '',
   visibleLimit: PAGE_SIZE,
   busy: false,
@@ -30,6 +32,19 @@ const mediaModel = reactive({
   collapsed: false,
   disposed: false,
 });
+const draftModel = reactive({
+  detachedPaths: new Set<string>(),
+  loading: true,
+  saving: false,
+  revision: 0,
+  editVersion: 0,
+  savedVersion: 0,
+  error: '',
+  retryable: false,
+});
+let draftDb: IDBDatabase | undefined;
+let draftTimer: number | undefined;
+let draftSaveTask: Promise<boolean> | undefined;
 const geofenceModel = reactive({
   ...loadGeofences(),
   busy: false,
@@ -43,7 +58,9 @@ const layoutModel = reactive({
 
 const filteredItems = computed(() => {
   const filter = mediaModel.filter.trim().toLowerCase();
-  return filter ? mediaModel.items.filter((item) => item.name.toLowerCase().includes(filter)) : mediaModel.items;
+  return mediaModel.items.filter((item) =>
+    !draftModel.detachedPaths.has(item.path) && (!filter || item.name.toLowerCase().includes(filter)),
+  );
 });
 const visibleItems = computed(() => filteredItems.value.slice(0, mediaModel.visibleLimit));
 const exportableCount = computed(() => mediaModel.items.filter((item) => isUsableGps(item.latitude, item.longitude)).length);
@@ -51,6 +68,111 @@ const hasMore = computed(() => visibleItems.value.length < filteredItems.value.l
 const visibleGeofences = computed(() =>
   layoutModel.activeTab === '电子围栏' || geofenceModel.showGeofencesOnMap ? geofenceModel.geofences : [],
 );
+const draftDirty = computed(() => draftModel.editVersion !== draftModel.savedVersion);
+const draftStatus = computed(() => {
+  if (draftModel.error) return draftModel.error;
+  if (draftModel.loading) return '正在读取草稿…';
+  if (draftModel.saving) return '正在保存草稿…';
+  if (draftDirty.value) return '草稿待保存';
+  return exportableCount.value ? '草稿已保存' : '';
+});
+const shouldConfirmLeaving = computed(() =>
+  mediaModel.busy || draftDirty.value || mediaModel.items.length > draftModel.detachedPaths.size,
+);
+
+function confirmLeaving(event: BeforeUnloadEvent): void {
+  event.preventDefault();
+  event.returnValue = true;
+}
+
+watch(shouldConfirmLeaving, (needed) => {
+  if (needed) window.addEventListener('beforeunload', confirmLeaving);
+  else window.removeEventListener('beforeunload', confirmLeaving);
+}, { flush: 'sync' });
+
+async function restoreDraft(): Promise<void> {
+  try {
+    const db = await openBrowserDraft();
+    if (mediaModel.disposed) {
+      db.close();
+      return;
+    }
+    draftDb = db;
+    const draft = await readBrowserDraft(db);
+    if (draft && !mediaModel.disposed) {
+      draftModel.revision = draft.revision;
+      draftModel.detachedPaths = new Set(draft.items.map((item) => item.path));
+      mediaModel.items = draft.items;
+    }
+  } catch {
+    draftDb?.close();
+    draftDb = undefined;
+    draftModel.error = '无法读取本地草稿，本次标注请及时下载 XMP ZIP';
+  } finally {
+    draftModel.loading = false;
+  }
+}
+
+function saveDraft(): void {
+  if (!draftDb || !draftDirty.value || draftModel.saving || draftModel.error) return;
+  const items = mediaModel.items.filter((item) => item.hasGps).map((item) => ({ ...item }));
+  draftSaveTask = persistDraft(draftDb, items).finally(() => { draftSaveTask = undefined; });
+}
+
+async function persistDraft(db: IDBDatabase, items: BrowserDraftItem[], clearing = false): Promise<boolean> {
+  const editVersion = draftModel.editVersion;
+  draftModel.saving = true;
+  try {
+    const saved = await writeBrowserDraft(db, { revision: draftModel.revision, items });
+    draftModel.retryable = false;
+    if (saved) {
+      draftModel.revision++;
+      draftModel.savedVersion = editVersion;
+      draftModel.error = '';
+    } else {
+      draftModel.error = '另一个标签页已更新草稿。请先下载 XMP ZIP，再刷新此页';
+    }
+    return saved;
+  } catch {
+    if (!clearing) {
+      draftModel.error = '草稿保存失败，请先下载 XMP ZIP 或重试保存';
+      draftModel.retryable = true;
+    }
+    return false;
+  } finally {
+    draftModel.saving = false;
+  }
+}
+
+function retryDraftSave(): void {
+  draftModel.error = '';
+  draftModel.retryable = false;
+  saveDraft();
+}
+
+function saveDraftWhenHidden(): void {
+  if (document.visibilityState === 'hidden') saveDraft();
+}
+
+async function clearExportedWorkspace(exportVersion: number): Promise<void> {
+  await draftSaveTask;
+  if (mediaModel.busy || exportVersion !== draftModel.editVersion) {
+    ElMessage.warning('工作台有新改动，请重新下载 XMP ZIP 后再清空');
+    return;
+  }
+  if (!draftDb || !await persistDraft(draftDb, [], true)) {
+    ElMessage.warning('未能清空本地草稿，当前媒体已保留');
+    return;
+  }
+  clearBrowserMedia();
+  mediaModel.items = [];
+  mediaModel.selectedPath = '';
+  mediaModel.filter = '';
+  mediaModel.visibleLimit = PAGE_SIZE;
+  mediaModel.progress = '';
+  draftModel.detachedPaths.clear();
+  ElMessage.success('本地草稿已清空');
+}
 
 function loadSettings(): AppConfig {
   const defaults: AppConfig = {
@@ -135,48 +257,74 @@ function newId(): string {
 }
 
 async function importFiles(files: File[]): Promise<void> {
-  if (!files.length || mediaModel.busy) return;
+  if (!files.length || mediaModel.busy || draftModel.loading) return;
   mediaModel.busy = true;
-  const names = new Set(mediaModel.items.map((item) => item.name.toLowerCase()));
+  const itemsByName = new Map(mediaModel.items.map((item) => [item.name.toLowerCase(), item]));
   let imported = 0;
+  let reconnected = 0;
   let skipped = 0;
+  let mismatched = 0;
 
   try {
     for (const [index, file] of files.entries()) {
       if (mediaModel.disposed) break;
       const name = safeBrowserMediaName(file.name);
-      if (!name || !classifyBrowserMedia(name) || names.has(name.toLowerCase())) {
+      if (!name || !classifyBrowserMedia(name)) {
         skipped++;
+        continue;
+      }
+      const key = name.toLowerCase();
+      const existing = itemsByName.get(key);
+      if (existing && !draftModel.detachedPaths.has(existing.path)) {
+        skipped++;
+        continue;
+      }
+      if (existing && (existing.name !== name || existing.size !== file.size || existing.lastModified !== file.lastModified)) {
+        mismatched++;
         continue;
       }
       mediaModel.progress = `正在读取 ${index + 1}/${files.length}：${name}`;
       try {
-        const path = `browser:${newId()}`;
-        const item = await createBrowserMediaItem(file, path);
+        const item = existing ?? {
+          ...await createBrowserMediaItem(file, `browser:${newId()}`),
+          size: file.size,
+          lastModified: file.lastModified,
+        };
         if (mediaModel.disposed) break;
-        registerBrowserMedia(path, file, item.mediaType);
-        mediaModel.items.push(item);
-        names.add(name.toLowerCase());
-        imported++;
-        if (!mediaModel.selectedPath) mediaModel.selectedPath = path;
+        registerBrowserMedia(item.path, file, item.mediaType);
+        if (existing) {
+          draftModel.detachedPaths.delete(item.path);
+          reconnected++;
+        } else {
+          mediaModel.items.push(item);
+          itemsByName.set(key, item);
+          if (item.hasGps) draftModel.editVersion++;
+          imported++;
+        }
+        if (!mediaModel.selectedPath) mediaModel.selectedPath = item.path;
       } catch {
         skipped++;
       }
       if (index % 20 === 19) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     }
     if (mediaModel.disposed) return;
-    mediaModel.progress = `已导入 ${imported} 个${skipped ? `，跳过 ${skipped} 个重复或不支持的文件` : ''}`;
-    if (imported) ElMessage.success(mediaModel.progress);
+    mediaModel.progress = `已导入 ${imported} 个${reconnected ? `，已恢复 ${reconnected} 个原文件` : ''}${skipped ? `，跳过 ${skipped} 个重复或不支持的文件` : ''}`;
+    if (mismatched) ElMessage.warning(`有 ${mismatched} 个同名文件与草稿记录不符，未关联。请选择原文件。`);
+    else if (imported || reconnected) ElMessage.success(mediaModel.progress);
     else ElMessage.warning(mediaModel.progress);
   } finally {
     mediaModel.busy = false;
+    saveDraft();
   }
 }
 
 function removeMedia(item: MediaItem): void {
   mediaModel.items = mediaModel.items.filter((entry) => entry.path !== item.path);
   removeBrowserMedia(item.path);
-  if (mediaModel.selectedPath === item.path) mediaModel.selectedPath = mediaModel.items[0]?.path ?? '';
+  if (item.hasGps) draftModel.editVersion++;
+  if (mediaModel.selectedPath === item.path) {
+    mediaModel.selectedPath = mediaModel.items.find((entry) => !draftModel.detachedPaths.has(entry.path))?.path ?? '';
+  }
 }
 
 function placeMedia(payload: { path: string; longitude: number; latitude: number }, notify = true): void {
@@ -197,6 +345,7 @@ function placeMedia(payload: { path: string; longitude: number; latitude: number
     gpsSource: 'xmp',
     xmpPath: `${item.name}.xmp`,
   };
+  draftModel.editVersion++;
   mediaModel.selectedPath = payload.path;
   if (notify) ElMessage.success('位置已更新');
 }
@@ -221,6 +370,27 @@ function downloadXmpZip(): void {
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   ElMessage.success(`已打包 ${result.exported} 个 XMP${result.skipped ? `，跳过 ${result.skipped} 个无坐标媒体` : ''}`);
+  if (!draftDb) return;
+
+  const exportVersion = draftModel.editVersion;
+  void ElMessageBox.confirm(
+    '请先确认 XMP ZIP 已下载到本机。清空会移除本地草稿和当前媒体列表，不会修改原文件。',
+    '清空本地草稿？',
+    {
+      confirmButtonText: '已下载，清空',
+      cancelButtonText: '保留草稿',
+      autofocus: false,
+      beforeClose(action, instance, done) {
+        if (instance.confirmButtonLoading) return;
+        if (action !== 'confirm') {
+          done();
+          return;
+        }
+        instance.confirmButtonLoading = true;
+        void clearExportedWorkspace(exportVersion).finally(done);
+      },
+    },
+  ).catch(() => { /* Keep the draft when the user dismisses the dialog. */ });
 }
 
 function updateLeftWidth(width: number): void {
@@ -281,8 +451,18 @@ function dropToGeofence(geofence: Geofence, paths: string[]): void {
   ElMessage.success(`已将 ${paths.length} 个媒体设置到围栏内`);
 }
 
+onMounted(() => {
+  void restoreDraft();
+  draftTimer = window.setInterval(saveDraft, DRAFT_SAVE_INTERVAL_MS);
+  document.addEventListener('visibilitychange', saveDraftWhenHidden);
+});
+
 onBeforeUnmount(() => {
   mediaModel.disposed = true;
+  window.clearInterval(draftTimer);
+  window.removeEventListener('beforeunload', confirmLeaving);
+  document.removeEventListener('visibilitychange', saveDraftWhenHidden);
+  draftDb?.close();
   clearBrowserMedia();
 });
 </script>
@@ -295,10 +475,17 @@ onBeforeUnmount(() => {
           <el-tabs v-model="layoutModel.activeTab" class="browser-tabs" type="border-card">
             <el-tab-pane label="基本功能" name="基本功能">
               <div class="browser-basic">
-                <BrowserMediaUpload :busy="mediaModel.busy" :progress="mediaModel.progress" @files="importFiles" />
+                <BrowserMediaUpload :busy="mediaModel.busy || draftModel.loading" :progress="mediaModel.progress" @files="importFiles" />
                 <div class="browser-export-bar">
                   <span>可导出 {{ exportableCount }} / {{ mediaModel.items.length }} 个 XMP</span>
                   <el-button type="primary" :icon="Download" :disabled="!exportableCount || mediaModel.busy" @click="downloadXmpZip">下载 XMP ZIP</el-button>
+                  <div v-if="draftStatus" class="browser-draft-status" :class="{ 'has-error': draftModel.error }" role="status">
+                    {{ draftStatus }}
+                    <el-button v-if="draftModel.retryable" link type="primary" @click="retryDraftSave">重试保存</el-button>
+                  </div>
+                  <div v-if="draftModel.detachedPaths.size" class="browser-draft-status">
+                    {{ draftModel.detachedPaths.size }} 个媒体尚未关联原文件。可直接导出坐标，重选原文件后可继续看图标注。
+                  </div>
                 </div>
                 <MediaTable
                   browser-mode
@@ -386,8 +573,10 @@ onBeforeUnmount(() => {
 .browser-tabs :deep(.el-tabs__content) { flex: 1; min-height: 0; padding: 0; }
 .browser-tabs :deep(.el-tab-pane) { height: 100%; }
 .browser-basic { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 10px; height: 100%; padding: 12px; overflow: hidden; }
-.browser-export-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text-muted); font-size: 12px; }
+.browser-export-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; color: var(--text-muted); font-size: 12px; }
 .browser-export-bar .el-button { flex: none; }
+.browser-draft-status { flex-basis: 100%; }
+.browser-draft-status.has-error { color: var(--el-color-danger-dark-2); }
 .browser-app :deep(.map-search) { top: 58px; left: 14px; width: min(400px, calc(100% - 28px)); }
 
 @media (max-width: 900px) {
