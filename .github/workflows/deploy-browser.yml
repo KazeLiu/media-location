@@ -1,0 +1,30 @@
+name: 部署浏览器版到 Vercel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 安装 Vercel CLI
+        run: npm install --global vercel@65.11.0
+      - name: 获取项目配置
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - name: 构建浏览器版
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+      - name: 发布到 Vercel
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"

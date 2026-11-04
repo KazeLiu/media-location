@@ -1,0 +1,6 @@
+{
+  "framework": null,
+  "buildCommand": "npm run build:browser",
+  "outputDirectory": "dist/browser",
+  "installCommand": "npm ci"
+}
