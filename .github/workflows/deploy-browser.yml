@@ -22,9 +22,5 @@ jobs:
           node-version: 22
       - name: 安装 Vercel CLI
         run: npm install --global vercel@65.11.0
-      - name: 获取项目配置
-        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-      - name: 构建浏览器版
-        run: vercel build --prod --token="$VERCEL_TOKEN"
-      - name: 发布到 Vercel
-        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+      - name: 从源码发布到 Vercel
+        run: vercel deploy --prod --yes --token="$VERCEL_TOKEN"
