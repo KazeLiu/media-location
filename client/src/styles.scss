@@ -114,7 +114,8 @@ body {
 }
 
 .media-section-wrapper {
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
 }
 
 .section-header {
@@ -193,7 +194,14 @@ body {
 }
 
 .media-toolbar {
+  flex: none;
   display: grid;
+  gap: 8px;
+}
+
+.media-toolbar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
 }
 
@@ -233,17 +241,11 @@ body {
 }
 
 .media-scrollbar {
-  height: 100%;
-  min-height: 180px;
+  flex: 1;
+  min-height: 0;
 
   .el-scrollbar__wrap {
     overflow-x: hidden;
-  }
-
-  .el-scrollbar__view {
-    width: 100%;
-    min-width: 0;
-    min-height: 100%;
   }
 
   .el-empty {
@@ -944,7 +946,6 @@ body {
   padding: 8px 12px;
   background-color: #f5f7fa;
   border-radius: 4px;
-  margin-bottom: 8px;
 }
 
 .batch-checkbox {

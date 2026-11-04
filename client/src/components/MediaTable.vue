@@ -332,9 +332,8 @@ watch(() => props.currentDir, () => {
     </header>
 
     <template v-if="!collapsed">
-      <el-scrollbar class="media-scrollbar" v-loading="loading">
-      <div class="media-content">
-        <div class="media-toolbar">
+      <div class="media-toolbar">
+        <div class="media-toolbar-row">
           <el-input
             :model-value="mediaFilter"
             :prefix-icon="Search"
@@ -360,7 +359,9 @@ watch(() => props.currentDir, () => {
             </el-tag>
           </el-space>
         </div>
+      </div>
 
+      <el-scrollbar v-loading="loading" class="media-scrollbar" view-class="media-content">
         <section
           v-for="section in mediaSections"
           :key="section.key"
@@ -598,8 +599,7 @@ watch(() => props.currentDir, () => {
             </el-button>
           </div>
         </section>
-      </div>
-    </el-scrollbar>
+      </el-scrollbar>
     </template>
   </section>
 </template>
